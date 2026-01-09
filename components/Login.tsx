@@ -130,14 +130,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, employees }) => {
           </button>
         </form>
 
-        <div className="mt-10 text-center">
-          <button
-            onClick={handleResetData}
-            className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] hover:text-red-400 transition-colors"
-          >
-            Сброс данных приложения
-          </button>
-        </div>
+
       </div>
     </div>
   );

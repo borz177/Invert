@@ -30,6 +30,8 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   const [view, setView] = useState<AppView>('DASHBOARD');
+
+  // Состояния данных
   const [products, setProducts] = useState<Product[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
@@ -39,29 +41,27 @@ const App: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [isQuickMenuOpen, setQuickMenuOpen] = useState(false);
 
   const [posCart, setPosCart] = useState<any[]>([]);
   const [warehouseBatch, setWarehouseBatch] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const isInitialized = useRef(false);
 
-  // Функция полной загрузки данных
-  const loadAllData = async (silent = false) => {
+  // Состояния синхронизации
+  const [isLoading, setIsLoading] = useState(true);
+  const [syncStatus, setSyncStatus] = useState<'IDLE' | 'SYNCING' | 'ERROR'>('IDLE');
+  const [isQuickMenuOpen, setQuickMenuOpen] = useState(false);
+
+  const isDataLoaded = useRef(false);
+  const isCurrentlyFetching = useRef(false);
+
+  // Глобальная функция загрузки всех данных
+  const fetchAllData = async (silent = false) => {
+    if (isCurrentlyFetching.current) return;
+    isCurrentlyFetching.current = true;
+
     if (!silent) setIsLoading(true);
-    else setIsSyncing(true);
+    setSyncStatus('SYNCING');
 
     try {
-      const auth = localStorage.getItem('isAuthenticated');
-      if (auth === 'true') {
-        const userJson = localStorage.getItem('currentUserObj');
-        if (userJson) {
-          setCurrentUser(JSON.parse(userJson));
-          setIsAuthenticated(true);
-        }
-      }
-
       const [p, t, s, c, sup, cust, emp, cats, sett, cart, batch] = await Promise.all([
         db.getData('products'),
         db.getData('transactions'),
@@ -76,60 +76,79 @@ const App: React.FC = () => {
         db.getData('warehouseBatch')
       ]);
 
-      if (p) setProducts(p);
-      if (t) setTransactions(t);
-      if (s) setSales(s);
-      if (c) setCashEntries(c);
-      if (sup) setSuppliers(sup);
-      if (cust) setCustomers(cust);
-      if (emp) setEmployees(emp);
+      // Массовое обновление стейта
+      if (p !== null) setProducts(p);
+      if (t !== null) setTransactions(t);
+      if (s !== null) setSales(s);
+      if (c !== null) setCashEntries(c);
+      if (sup !== null) setSuppliers(sup);
+      if (cust !== null) setCustomers(cust);
+      if (emp !== null) setEmployees(emp);
       if (cats && cats.length) setCategories(cats);
       if (sett && sett.shopName) setSettings(sett);
-      if (cart) setPosCart(cart);
-      if (batch) setWarehouseBatch(batch);
+      if (cart !== null) setPosCart(cart);
+      if (batch !== null) setWarehouseBatch(batch);
 
-      isInitialized.current = true;
+      isDataLoaded.current = true;
+      setSyncStatus('IDLE');
     } catch (e) {
-      console.error("Critical Sync Error", e);
+      console.error("Fetch Error:", e);
+      setSyncStatus('ERROR');
     } finally {
       setIsLoading(false);
-      setIsSyncing(false);
+      isCurrentlyFetching.current = false;
     }
   };
 
-  // Первоначальная загрузка
+  // 1. Начальная загрузка и проверка авторизации
   useEffect(() => {
-    loadAllData();
-
-    // ФОНОВАЯ СИНХРОНИЗАЦИЯ: каждые 30 секунд проверяем обновления с других устройств
-    const interval = setInterval(() => {
-      if (isAuthenticated) {
-        loadAllData(true);
+    const auth = localStorage.getItem('isAuthenticated');
+    if (auth === 'true') {
+      const userJson = localStorage.getItem('currentUserObj');
+      if (userJson) {
+        setCurrentUser(JSON.parse(userJson));
+        setIsAuthenticated(true);
       }
-    }, 30000);
+    }
+    fetchAllData();
+  }, []);
 
+  // 2. Авто-обновление данных (каждые 30 секунд) для синхронизации между устройствами
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const interval = setInterval(() => fetchAllData(true), 30000);
     return () => clearInterval(interval);
   }, [isAuthenticated]);
 
-  // Сохранение изменений в облако при действиях пользователя
+  // 3. Сохранение изменений в облако (Debounced)
+  // ВАЖНО: Мы сохраняем ТОЛЬКО если данные были успешно загружены (isDataLoaded.current),
+  // чтобы пустой начальный стейт [] не стер базу данных на сервере.
   useEffect(() => {
-    if (isInitialized.current && !isLoading && !isSyncing) {
-      const timer = setTimeout(() => {
-        db.saveData('products', products);
-        db.saveData('transactions', transactions);
-        db.saveData('sales', sales);
-        db.saveData('cashEntries', cashEntries);
-        db.saveData('suppliers', suppliers);
-        db.saveData('customers', customers);
-        db.saveData('employees', employees);
-        db.saveData('categories', categories);
-        db.saveData('settings', settings);
-        db.saveData('posCart', posCart);
-        db.saveData('warehouseBatch', warehouseBatch);
-      }, 1000); // Задержка 1 сек, чтобы не частить запросами при быстром вводе
-      return () => clearTimeout(timer);
-    }
-  }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch, isLoading, isSyncing]);
+    if (!isDataLoaded.current || isLoading || isCurrentlyFetching.current) return;
+
+    const syncToCloud = async () => {
+      setSyncStatus('SYNCING');
+      const results = await Promise.all([
+        db.saveData('products', products),
+        db.saveData('transactions', transactions),
+        db.saveData('sales', sales),
+        db.saveData('cashEntries', cashEntries),
+        db.saveData('suppliers', suppliers),
+        db.saveData('customers', customers),
+        db.saveData('employees', employees),
+        db.saveData('categories', categories),
+        db.saveData('settings', settings),
+        db.saveData('posCart', posCart),
+        db.saveData('warehouseBatch', warehouseBatch)
+      ]);
+
+      const hasError = results.some(r => r === false);
+      setSyncStatus(hasError ? 'ERROR' : 'IDLE');
+    };
+
+    const timer = setTimeout(syncToCloud, 1500);
+    return () => clearTimeout(timer);
+  }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch]);
 
   const handleLogin = (user: Employee) => {
     setIsAuthenticated(true);
@@ -145,11 +164,12 @@ const App: React.FC = () => {
     localStorage.removeItem('currentUserObj');
   };
 
-  // ... остальные хендлеры (handleSale, handleCashEntry и т.д.) остаются без изменений
+  // Логика обновления остатков
   const updateProductStock = (id: string, diff: number) => {
     setProducts(prev => prev.map(p => p.id === id ? { ...p, quantity: p.quantity + diff } : p));
   };
 
+  // Обработка продаж
   const handleSale = (s: Sale) => {
     const saleWithEmployee = { ...s, employeeId: currentUser?.id || 'admin' };
     setSales([saleWithEmployee, ...sales]);
@@ -210,32 +230,7 @@ const App: React.FC = () => {
     setWarehouseBatch([]);
   };
 
-  const softDeleteTransaction = (id: string) => {
-    const t = transactions.find(x => x.id === id);
-    if (!t || t.isDeleted) return;
-    setTransactions(prev => prev.map(x => x.id === id ? { ...x, isDeleted: true } : x));
-    const multiplier = t.type === 'IN' ? -1 : 1;
-    updateProductStock(t.productId, t.quantity * multiplier);
-    const totalCost = t.quantity * (t.pricePerUnit || 0);
-    if (t.type === 'IN' && t.supplierId && t.paymentMethod === 'DEBT') {
-      setSuppliers(prev => prev.map(s => s.id === t.supplierId ? { ...s, debt: Math.max(0, s.debt - totalCost) } : s));
-    } else if (t.type === 'IN' && t.paymentMethod === 'CASH') {
-      setCashEntries(prev => prev.filter(e => e.id !== `intake-${t.id}`));
-    }
-  };
-
-  const softDeleteSale = (id: string) => {
-    const s = sales.find(x => x.id === id);
-    if (!s || s.isDeleted) return;
-    setSales(prev => prev.map(x => x.id === id ? { ...x, isDeleted: true } : x));
-    s.items.forEach(i => updateProductStock(i.productId, i.quantity));
-    if (s.paymentMethod === 'DEBT' && s.customerId) {
-      setCustomers(prev => prev.map(c => c.id === s.customerId ? { ...c, debt: Math.max(0, c.debt - s.total) } : c));
-    } else {
-      setCashEntries(prev => prev.filter(e => e.id !== `sale-${s.id}`));
-    }
-  };
-
+  // Роутинг вьюх
   const renderView = () => {
     if (!currentUser) return null;
     const { permissions } = currentUser;
@@ -246,7 +241,7 @@ const App: React.FC = () => {
         <ProductList
           products={products} categories={categories}
           canEdit={permissions.canEditProduct} canCreate={permissions.canCreateProduct} canDelete={permissions.canDeleteProduct} showCost={permissions.canShowCost}
-          onAdd={p => setProducts([...products, p])} onAddBulk={ps => setProducts([...products, ...ps])}
+          onAdd={p => setProducts([p, ...products])} onAddBulk={ps => setProducts([...ps, ...products])}
           onUpdate={p => setProducts(products.map(x => x.id === p.id ? p : x))}
           onDelete={id => setProducts(products.filter(x => x.id !== id))}
           onAddCategory={c => setCategories([...categories, c])}
@@ -280,8 +275,8 @@ const App: React.FC = () => {
         <AllOperations
           sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees}
           onUpdateTransaction={() => {}}
-          onDeleteTransaction={softDeleteTransaction}
-          onDeleteSale={softDeleteSale}
+          onDeleteTransaction={(id) => setTransactions(prev => prev.map(t => t.id === id ? {...t, isDeleted: true} : t))}
+          onDeleteSale={(id) => setSales(prev => prev.map(s => s.id === id ? {...s, isDeleted: true} : s))}
           onDeleteCashEntry={(id) => setCashEntries(prev => prev.filter(x => x.id !== id))}
         />
       );
@@ -352,7 +347,13 @@ const App: React.FC = () => {
     }
   };
 
-  if (isLoading) return <div className="fixed inset-0 bg-slate-50 flex flex-col items-center justify-center"><div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div><p className="mt-4 font-black text-indigo-600 uppercase tracking-widest text-[10px]">Загрузка базы данных...</p></div>;
+  if (isLoading) return (
+    <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-[300]">
+      <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+      <p className="mt-6 font-black text-indigo-600 uppercase tracking-[0.2em] text-xs">Загрузка данных...</p>
+      <p className="mt-2 text-slate-400 text-[10px] font-bold">Синхронизация с сервером</p>
+    </div>
+  );
 
   if (!isAuthenticated) return <Login onLogin={handleLogin} employees={employees} />;
 
@@ -362,17 +363,29 @@ const App: React.FC = () => {
         <h1 className="text-xl font-black flex items-center gap-2 cursor-pointer" onClick={() => setView('DASHBOARD')}>
           <i className="fas fa-store"></i>
           <span>{settings.shopName}</span>
-          {isSyncing && <i className="fas fa-sync fa-spin text-[10px] text-slate-300 ml-2"></i>}
+          {/* Индикатор синхронизации */}
+          <div className="ml-2 flex items-center">
+            {syncStatus === 'SYNCING' && <i className="fas fa-sync fa-spin text-[10px] text-indigo-400"></i>}
+            {syncStatus === 'ERROR' && <i className="fas fa-exclamation-circle text-[10px] text-red-500 animate-pulse"></i>}
+            {syncStatus === 'IDLE' && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>}
+          </div>
         </h1>
         <div className="flex items-center gap-3">
           <button onClick={() => setView('PROFILE')} className="bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 flex items-center gap-2">
-            <div className="w-6 h-6 bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center font-black">{currentUser?.name?.[0].toUpperCase()}</div>
+            <div className="w-6 h-6 bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center font-black">
+              {currentUser?.name?.[0].toUpperCase()}
+            </div>
             <span className="text-xs font-bold text-slate-700">{currentUser?.name}</span>
           </button>
         </div>
       </header>
-      {/* ... остаток разметки App.tsx остается без изменений */}
-      <main className="flex-1 overflow-y-auto p-4 pb-28 no-scrollbar"><div className="max-w-5xl mx-auto">{renderView()}</div></main>
+
+      <main className="flex-1 overflow-y-auto p-4 pb-28 no-scrollbar">
+        <div className="max-w-5xl mx-auto">
+          {renderView()}
+        </div>
+      </main>
+
       {isQuickMenuOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-end justify-center pb-24 px-4" onClick={() => setQuickMenuOpen(false)}>
           <div className="grid grid-cols-2 gap-4 p-6 bg-white rounded-3xl w-full max-w-sm shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
@@ -385,11 +398,14 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-lg border-t border-slate-200 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] flex justify-around p-1 z-[70] px-2 h-20">
+
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-slate-200 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] flex justify-around p-1 z-[70] px-2 h-20">
         {NAV_ITEMS.map(item => (
           item.isCenter ? (
             <div key={item.id} className="relative -top-6">
-               <button onClick={() => setQuickMenuOpen(!isQuickMenuOpen)} className={`w-14 h-14 ${isQuickMenuOpen ? 'bg-slate-800 rotate-45' : 'bg-indigo-600'} text-white rounded-full flex items-center justify-center shadow-2xl border-4 border-white transition-all duration-300 active:scale-90`}><i className="fas fa-plus text-xl"></i></button>
+               <button onClick={() => setQuickMenuOpen(!isQuickMenuOpen)} className={`w-14 h-14 ${isQuickMenuOpen ? 'bg-slate-800 rotate-45' : 'bg-indigo-600'} text-white rounded-full flex items-center justify-center shadow-2xl border-4 border-white transition-all duration-300 active:scale-90`}>
+                 <i className="fas fa-plus text-xl"></i>
+               </button>
             </div>
           ) : (
             <button key={item.id} onClick={() => { setView(item.id as AppView); setQuickMenuOpen(false); }} className={`flex flex-col items-center justify-center px-4 rounded-xl transition-all ${view === item.id ? 'text-indigo-600' : 'text-slate-400'}`}>
