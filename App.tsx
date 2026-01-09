@@ -90,7 +90,6 @@ const App: React.FC = () => {
       console.error('Fetch all data error:', e);
       setSyncStatus('ERROR');
     } finally {
-      // Это критически важно: снимаем загрузку в любом случае
       setIsLoading(false);
     }
   };
@@ -193,6 +192,41 @@ const App: React.FC = () => {
       case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} onSale={(s) => setSales([s, ...sales])} />;
       case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={(e) => setCashEntries([e, ...cashEntries])} />;
       case 'REPORTS': return <Reports sales={sales} products={products} transactions={transactions} />;
+      case 'ALL_OPERATIONS': return (
+        <AllOperations
+          sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees}
+          onUpdateTransaction={t => setTransactions(transactions.map(x => x.id === t.id ? t : x))}
+          onDeleteTransaction={id => setTransactions(transactions.map(t => t.id === id ? { ...t, isDeleted: true } : t))}
+          onDeleteSale={id => setSales(sales.map(s => s.id === id ? { ...s, isDeleted: true } : s))}
+          onDeleteCashEntry={id => setCashEntries(cashEntries.filter(c => c.id !== id))}
+        />
+      );
+      case 'STOCK_REPORT': return <StockReport products={products} />;
+      case 'PRICE_LIST': return <PriceList products={products} showCost={true} />;
+      case 'SUPPLIERS': return (
+        <Suppliers
+          suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products}
+          onAdd={s => setSuppliers([...suppliers, s])}
+          onUpdate={s => setSuppliers(suppliers.map(x => x.id === s.id ? s : x))}
+          onDelete={id => setSuppliers(suppliers.filter(x => x.id !== id))}
+        />
+      );
+      case 'CLIENTS': return (
+        <Clients
+          customers={customers} sales={sales} cashEntries={cashEntries}
+          onAdd={c => setCustomers([...customers, c])}
+          onUpdate={c => setCustomers(customers.map(x => x.id === c.id ? c : x))}
+          onDelete={id => setCustomers(customers.filter(x => x.id !== id))}
+        />
+      );
+      case 'EMPLOYEES': return (
+        <Employees
+          employees={employees} sales={sales}
+          onAdd={e => setEmployees([...employees, e])}
+          onUpdate={e => setEmployees(employees.map(x => x.id === e.id ? e : x))}
+          onDelete={id => setEmployees(employees.filter(x => x.id !== id))}
+        />
+      );
       case 'PROFILE': return <Profile user={{id: currentUser.id, name: currentUser.name, role: 'управляющий', login: currentUser.email, password: '', salary: 0, revenuePercent: 0, profitPercent: 0, permissions: {canEditProduct: true, canCreateProduct: true, canDeleteProduct: true, canShowCost: true}} as Employee} sales={sales} onLogout={handleLogout} />;
       case 'SETTINGS': return <Settings settings={settings} onUpdate={setSettings} onClear={() => {}} />;
       case 'MORE_MENU': return (
@@ -211,6 +245,10 @@ const App: React.FC = () => {
             <button onClick={() => setView('CLIENTS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
               <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i className="fas fa-users"></i></div>
               <span className="font-bold text-slate-700">Клиенты</span>
+            </button>
+            <button onClick={() => setView('EMPLOYEES')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
+              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i className="fas fa-user-tie"></i></div>
+              <span className="font-bold text-slate-700">Сотрудники</span>
             </button>
             {currentUser.role === 'admin' && (
               <button onClick={() => setView('TENANT_ADMIN')} className="w-full bg-slate-800 text-white p-5 rounded-3xl shadow-sm flex items-center gap-4 hover:bg-black transition-colors">
@@ -253,7 +291,7 @@ const App: React.FC = () => {
         <div className="flex items-center gap-3">
           <button onClick={() => setView('PROFILE')} className="bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 flex items-center gap-2">
             <div className="w-6 h-6 bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center font-black">
-              {currentUser?.name?.[0].toUpperCase()}
+              {currentUser?.name?.[0].toUpperCase() || 'U'}
             </div>
             <span className="text-xs font-bold text-slate-700">{currentUser?.name}</span>
           </button>
