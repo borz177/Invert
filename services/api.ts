@@ -1,4 +1,48 @@
 // services/api.ts
+import { User } from '../types';
+
+/**
+ * Определяем базовый URL API
+ */
+const getApiUrl = () => {
+  const { protocol, hostname, port } = window.location;
+
+  // Локальная разработка
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return port !== '3001'
+      ? `${protocol}//${hostname}:3001/api`
+      : `${protocol}//${hostname}:${port}/api`;
+  }
+
+  // Продакшен — используем относительный путь
+  return '/api';
+};
+
+const API_BASE = getApiUrl();
+
+/**
+ * Функция fetch с таймаутом
+ */
+async function fetchWithTimeout(url: string, options: RequestInit = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 секунд
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
+/**
+ * Экспортируем объект db
+ */
 export const db = {
   auth: {
     async register(email: string, password: string, name: string): Promise<User> {
@@ -28,7 +72,7 @@ export const db = {
 
     try {
       const response = await fetchWithTimeout(`${API_BASE}/data`, {
-        method: 'POST', // ← ИЗМЕНЕНО НА POST
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, user_id: user.id })
       });
