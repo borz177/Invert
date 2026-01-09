@@ -1,7 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Product, Transaction, Sale, CashEntry, AppView, Supplier, Customer, Employee, AppSettings } from './types';
 import { NAV_ITEMS, QUICK_ACTIONS, INITIAL_CATEGORIES } from './constants';
+import { db } from './services/api';
 import Dashboard from './components/Dashboard';
 import ProductList from './components/ProductList';
 import Warehouse from './components/Warehouse';
@@ -42,53 +43,86 @@ const App: React.FC = () => {
 
   const [posCart, setPosCart] = useState<any[]>([]);
   const [warehouseBatch, setWarehouseBatch] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const isInitialized = useRef(false);
 
+  // Первоначальная загрузка данных
   useEffect(() => {
-    const load = (key: string) => localStorage.getItem(key);
-    try {
-      const auth = load('isAuthenticated');
-      if (auth === 'true') {
-        const userJson = load('currentUserObj');
-        if (userJson && userJson !== 'null') {
-          setCurrentUser(JSON.parse(userJson));
-          setIsAuthenticated(true);
+    const loadAllData = async () => {
+      setIsLoading(true);
+      try {
+        const auth = localStorage.getItem('isAuthenticated');
+        if (auth === 'true') {
+          const userJson = localStorage.getItem('currentUserObj');
+          if (userJson) {
+            setCurrentUser(JSON.parse(userJson));
+            setIsAuthenticated(true);
+          }
         }
-      }
-      if (load('products')) setProducts(JSON.parse(load('products')!));
-      if (load('transactions')) setTransactions(JSON.parse(load('transactions')!));
-      if (load('sales')) setSales(JSON.parse(load('sales')!));
-      if (load('cashEntries')) setCashEntries(JSON.parse(load('cashEntries')!));
-      if (load('suppliers')) setSuppliers(JSON.parse(load('suppliers')!));
-      if (load('customers')) setCustomers(JSON.parse(load('customers')!));
-      if (load('employees')) setEmployees(JSON.parse(load('employees')!));
-      if (load('categories')) setCategories(JSON.parse(load('categories')!));
-      if (load('settings')) setSettings(JSON.parse(load('settings')!));
 
-      if (load('posCart')) setPosCart(JSON.parse(load('posCart')!));
-      if (load('warehouseBatch')) setWarehouseBatch(JSON.parse(load('warehouseBatch')!));
-    } catch (e) { console.error("Data load error", e); }
+        const [p, t, s, c, sup, cust, emp, cats, sett, cart, batch] = await Promise.all([
+          db.getData('products'),
+          db.getData('transactions'),
+          db.getData('sales'),
+          db.getData('cashEntries'),
+          db.getData('suppliers'),
+          db.getData('customers'),
+          db.getData('employees'),
+          db.getData('categories'),
+          db.getData('settings'),
+          db.getData('posCart'),
+          db.getData('warehouseBatch')
+        ]);
+
+        if (p) setProducts(p);
+        if (t) setTransactions(t);
+        if (s) setSales(s);
+        if (c) setCashEntries(c);
+        if (sup) setSuppliers(sup);
+        if (cust) setCustomers(cust);
+        if (emp) setEmployees(emp);
+        if (cats && cats.length) setCategories(cats);
+        if (sett && sett.shopName) setSettings(sett);
+        if (cart) setPosCart(cart);
+        if (batch) setWarehouseBatch(batch);
+
+        // Помечаем, что данные загружены и можно начинать синхронизацию В БАЗУ
+        isInitialized.current = true;
+      } catch (e) {
+        console.error("Database connection error", e);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadAllData();
   }, []);
 
+  // Оптимизированная синхронизация (с защитой от перезатирания при загрузке)
   useEffect(() => {
-    localStorage.setItem('isAuthenticated', isAuthenticated.toString());
-    localStorage.setItem('currentUserObj', JSON.stringify(currentUser));
-    localStorage.setItem('products', JSON.stringify(products));
-    localStorage.setItem('transactions', JSON.stringify(transactions));
-    localStorage.setItem('sales', JSON.stringify(sales));
-    localStorage.setItem('cashEntries', JSON.stringify(cashEntries));
-    localStorage.setItem('suppliers', JSON.stringify(suppliers));
-    localStorage.setItem('customers', JSON.stringify(customers));
-    localStorage.setItem('employees', JSON.stringify(employees));
-    localStorage.setItem('categories', JSON.stringify(categories));
-    localStorage.setItem('settings', JSON.stringify(settings));
-
-    localStorage.setItem('posCart', JSON.stringify(posCart));
-    localStorage.setItem('warehouseBatch', JSON.stringify(warehouseBatch));
-  }, [isAuthenticated, currentUser, products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch]);
+    if (isInitialized.current && !isLoading) {
+      // Используем setTimeout как простой debounce, чтобы не спамить запросами
+      const timer = setTimeout(() => {
+        db.saveData('products', products);
+        db.saveData('transactions', transactions);
+        db.saveData('sales', sales);
+        db.saveData('cashEntries', cashEntries);
+        db.saveData('suppliers', suppliers);
+        db.saveData('customers', customers);
+        db.saveData('employees', employees);
+        db.saveData('categories', categories);
+        db.saveData('settings', settings);
+        db.saveData('posCart', posCart);
+        db.saveData('warehouseBatch', warehouseBatch);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch, isLoading]);
 
   const handleLogin = (user: Employee) => {
     setIsAuthenticated(true);
     setCurrentUser(user);
+    localStorage.setItem('isAuthenticated', 'true');
+    localStorage.setItem('currentUserObj', JSON.stringify(user));
   };
 
   const handleLogout = () => {
@@ -141,13 +175,11 @@ const App: React.FC = () => {
 
     tsWithEmp.forEach(t => {
       updateProductStock(t.productId, t.quantity);
-
       const totalCost = t.quantity * (t.pricePerUnit || 0);
       if (t.type === 'IN' && t.supplierId && totalCost > 0) {
         if (t.paymentMethod === 'DEBT') {
           setSuppliers(prev => prev.map(s => s.id === t.supplierId ? { ...s, debt: s.debt + totalCost } : s));
         } else if (t.paymentMethod === 'CASH') {
-          const supplierName = suppliers.find(s => s.id === t.supplierId)?.name || 'Поставщик';
           setCashEntries([{
             id: `intake-${t.id}`,
             amount: totalCost,
@@ -170,7 +202,6 @@ const App: React.FC = () => {
     setTransactions(prev => prev.map(x => x.id === id ? { ...x, isDeleted: true } : x));
     const multiplier = t.type === 'IN' ? -1 : 1;
     updateProductStock(t.productId, t.quantity * multiplier);
-
     const totalCost = t.quantity * (t.pricePerUnit || 0);
     if (t.type === 'IN' && t.supplierId && t.paymentMethod === 'DEBT') {
       setSuppliers(prev => prev.map(s => s.id === t.supplierId ? { ...s, debt: Math.max(0, s.debt - totalCost) } : s));
@@ -200,12 +231,8 @@ const App: React.FC = () => {
       case 'PRODUCTS': return (
         <ProductList
           products={products} categories={categories}
-          canEdit={permissions.canEditProduct}
-          canCreate={permissions.canCreateProduct}
-          canDelete={permissions.canDeleteProduct}
-          showCost={permissions.canShowCost}
-          onAdd={p => setProducts([...products, p])}
-          onAddBulk={ps => setProducts([...products, ...ps])}
+          canEdit={permissions.canEditProduct} canCreate={permissions.canCreateProduct} canDelete={permissions.canDeleteProduct} showCost={permissions.canShowCost}
+          onAdd={p => setProducts([...products, p])} onAddBulk={ps => setProducts([...products, ...ps])}
           onUpdate={p => setProducts(products.map(x => x.id === p.id ? p : x))}
           onDelete={id => setProducts(products.filter(x => x.id !== id))}
           onAddCategory={c => setCategories([...categories, c])}
@@ -221,21 +248,15 @@ const App: React.FC = () => {
       );
       case 'WAREHOUSE': return (
         <Warehouse
-          products={products}
-          suppliers={suppliers}
-          transactions={transactions}
-          batch={warehouseBatch}
-          setBatch={setWarehouseBatch}
+          products={products} suppliers={suppliers} transactions={transactions}
+          batch={warehouseBatch} setBatch={setWarehouseBatch}
           onTransaction={t => handleWarehouseIntake([t])}
           onTransactionsBulk={ts => handleWarehouseIntake(ts)}
         />
       );
       case 'SALES': return (
         <POS
-          products={products}
-          customers={customers}
-          cart={posCart}
-          setCart={setPosCart}
+          products={products} customers={customers} cart={posCart} setCart={setPosCart}
           onSale={handleSale}
         />
       );
@@ -247,15 +268,12 @@ const App: React.FC = () => {
           onUpdateTransaction={() => {}}
           onDeleteTransaction={softDeleteTransaction}
           onDeleteSale={softDeleteSale}
-          onDeleteCashEntry={handleCashEntry ? (id) => setCashEntries(prev => prev.filter(x => x.id !== id)) : () => {}}
+          onDeleteCashEntry={(id) => setCashEntries(prev => prev.filter(x => x.id !== id))}
         />
       );
       case 'SUPPLIERS': return (
         <Suppliers
-          suppliers={suppliers}
-          transactions={transactions}
-          cashEntries={cashEntries}
-          products={products}
+          suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products}
           onAdd={s => setSuppliers([...suppliers, { ...s, debt: 0 }])}
           onUpdate={s => setSuppliers(suppliers.map(x => x.id === s.id ? s : x))}
           onDelete={id => setSuppliers(suppliers.filter(x => x.id !== id))}
@@ -263,9 +281,7 @@ const App: React.FC = () => {
       );
       case 'CLIENTS': return (
         <Clients
-          customers={customers}
-          sales={sales}
-          cashEntries={cashEntries}
+          customers={customers} sales={sales} cashEntries={cashEntries}
           onAdd={c => setCustomers([...customers, { ...c, debt: 0 }])}
           onUpdate={c => setCustomers(customers.map(x => x.id === c.id ? c : x))}
           onDelete={id => setCustomers(customers.filter(x => x.id !== id))}
@@ -273,8 +289,7 @@ const App: React.FC = () => {
       );
       case 'EMPLOYEES': return (
         <Employees
-          employees={employees}
-          sales={sales}
+          employees={employees} sales={sales}
           onAdd={e => setEmployees([...employees, e])}
           onUpdate={e => setEmployees(employees.map(x => x.id === e.id ? e : x))}
           onDelete={id => setEmployees(employees.filter(x => x.id !== id))}
@@ -322,6 +337,8 @@ const App: React.FC = () => {
       default: return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} />;
     }
   };
+
+  if (isLoading) return <div className="fixed inset-0 bg-slate-50 flex flex-col items-center justify-center"><div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div><p className="mt-4 font-black text-indigo-600 uppercase tracking-widest text-[10px]">Загрузка базы данных...</p></div>;
 
   if (!isAuthenticated) return <Login onLogin={handleLogin} employees={employees} />;
 

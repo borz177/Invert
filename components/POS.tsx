@@ -37,9 +37,6 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale })
     if (inputQty > qtyModalProduct.quantity) { alert(`Недостаточно товара! В наличии: ${qtyModalProduct.quantity}`); return; }
 
     const p = qtyModalProduct;
-    // Мы ищем в корзине товар с таким же ID И такой же ценой.
-    // Если цена изменена, это может считаться отдельной позицией в чеке (опционально),
-    // но для простоты будем обновлять существующий, если цена совпадает.
     const existingIndex = cart.findIndex(item => item.id === p.id && item.price === inputPrice);
 
     if (existingIndex > -1) {
@@ -167,7 +164,7 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale })
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Количество ({qtyModalProduct.unit})</label>
                 <div className="flex items-center bg-slate-50 border border-slate-200 rounded-3xl h-16 shadow-inner">
                   <button onClick={() => setInputQty(Math.max(1, inputQty - 1))} className="w-14 h-full text-slate-400 text-lg active:bg-slate-100 transition-colors"><i className="fas fa-minus"></i></button>
-                  <input type="number" step="any" className="flex-1 text-center bg-transparent outline-none font-black text-xl text-slate-800" value={inputQty} onChange={e => setInputQty(parseFloat(e.target.value) || 0)}/>
+                  <input type="number" step="any" inputMode="decimal" className="flex-1 text-center bg-transparent outline-none font-black text-xl text-slate-800" value={inputQty === 0 ? '' : inputQty} onChange={e => setInputQty(parseFloat(e.target.value) || 0)}/>
                   <button onClick={() => setInputQty(Math.min(qtyModalProduct.quantity, inputQty + 1))} className="w-14 h-full text-slate-400 text-lg active:bg-slate-100 transition-colors"><i className="fas fa-plus"></i></button>
                 </div>
               </div>
@@ -178,8 +175,9 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale })
                   <input
                     type="number"
                     step="0.01"
+                    inputMode="decimal"
                     className="w-full p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl outline-none font-black text-xl text-indigo-600 text-center focus:ring-4 focus:ring-indigo-500/5 transition-all"
-                    value={inputPrice}
+                    value={inputPrice === 0 ? '' : inputPrice}
                     onChange={e => setInputPrice(parseFloat(e.target.value) || 0)}
                   />
                   <div className="absolute right-4 top-1/2 -translate-y-1/2 text-indigo-300 font-black">₽</div>
@@ -221,7 +219,6 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale })
                     <p className="font-bold text-slate-800 truncate text-sm">{item.name}</p>
                     <div className="flex items-center gap-2">
                       <p className="text-xs text-indigo-500 font-bold">{item.price.toLocaleString()} ₽ / {item.unit}</p>
-                      {/* Если цена отличается от базовой цены товара, можно добавить пометку */}
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -252,7 +249,7 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale })
                 <div className="grid grid-cols-3 gap-2">
                   <button onClick={() => checkout('CASH')} className="bg-slate-800 text-white p-4 rounded-2xl font-black shadow-lg flex flex-col items-center active:scale-95 transition-transform"><i className="fas fa-money-bill-wave text-lg mb-1"></i><span className="text-[9px] uppercase">Нал</span></button>
                   <button onClick={() => checkout('CARD')} className="bg-indigo-600 text-white p-4 rounded-2xl font-black shadow-lg flex flex-col items-center active:scale-95 transition-transform"><i className="fas fa-credit-card text-lg mb-1"></i><span className="text-[9px] uppercase">Карта</span></button>
-                  <button onClick={() => checkout('DEBT')} disabled={!selectedCustomerId} className="bg-red-500 text-white p-4 rounded-2xl font-black shadow-lg flex flex-col items-center active:scale-95 transition-transform disabled:opacity-40"><i className="fas fa-hand-holding-usd text-lg mb-1"></i><span className="text-[9px] uppercase">В долг</span></button>
+                  <button onClick={() => checkout('DEBT')} disabled={!selectedCustomerId} className="bg-red-50 text-white p-4 rounded-2xl font-black shadow-lg flex flex-col items-center active:scale-95 transition-transform disabled:opacity-40 bg-red-500"><i className="fas fa-hand-holding-usd text-lg mb-1"></i><span className="text-[9px] uppercase">В долг</span></button>
                 </div>
               </div>
             )}

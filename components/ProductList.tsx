@@ -263,21 +263,21 @@ const ProductList: React.FC<ProductListProps> = ({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Закуп (₽)</label>
-                  <input type="number" step="0.01" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.cost || 0} onChange={e => setFormData({...formData, cost: parseFloat(e.target.value) || 0})} />
+                  <input type="number" step="0.01" inputMode="decimal" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.cost === 0 ? '' : formData.cost} onChange={e => setFormData({...formData, cost: parseFloat(e.target.value) || 0})} />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Продажа (₽)</label>
-                  <input type="number" step="0.01" required className="w-full p-4 bg-indigo-50 border border-indigo-100 rounded-2xl outline-none font-black text-indigo-600" value={formData.price || 0} onChange={e => setFormData({...formData, price: parseFloat(e.target.value) || 0})} />
+                  <input type="number" step="0.01" inputMode="decimal" required className="w-full p-4 bg-indigo-50 border border-indigo-100 rounded-2xl outline-none font-black text-indigo-600" value={formData.price === 0 ? '' : formData.price} onChange={e => setFormData({...formData, price: parseFloat(e.target.value) || 0})} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Текущий ост.</label>
-                  <input type="number" step="any" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.quantity || 0} onChange={e => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})} />
+                  <input type="number" step="any" inputMode="decimal" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.quantity === 0 ? '' : formData.quantity} onChange={e => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})} />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Мин. порог</label>
-                  <input type="number" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.minStock || 0} onChange={e => setFormData({...formData, minStock: parseInt(e.target.value) || 0})} />
+                  <input type="number" inputMode="numeric" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.minStock === 0 ? '' : formData.minStock} onChange={e => setFormData({...formData, minStock: parseInt(e.target.value) || 0})} />
                 </div>
               </div>
             </div>

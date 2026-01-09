@@ -1,13 +1,9 @@
 
-const CACHE_NAME = 'inventory-pro-cache-v2';
+const CACHE_NAME = 'inventory-pro-cache-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
-  '/manifest.json',
-  '/index.tsx',
-  '/App.tsx',
-  '/types.ts',
-  '/constants.tsx'
+  '/manifest.json'
 ];
 
 self.addEventListener('install', event => {
@@ -29,16 +25,21 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // Пропускаем запросы к API Google и внешним шрифтам, чтобы они не ломали кэш
-  if (event.request.url.includes('google') || event.request.url.includes('fonts')) {
+  // ПРОПУСКАЕМ запросы к API и внешним сервисам
+  // Это критично для корректной работы базы данных на сервере
+  if (
+    event.request.url.includes('/api/') ||
+    event.request.url.includes('google') ||
+    event.request.url.includes('fonts') ||
+    event.request.method !== 'GET'
+  ) {
     return;
   }
 
   event.respondWith(
     caches.match(event.request).then(cachedResponse => {
       const fetchPromise = fetch(event.request).then(networkResponse => {
-        // Кэшируем только успешные GET запросы
-        if (networkResponse && networkResponse.status === 200 && event.request.method === 'GET') {
+        if (networkResponse && networkResponse.status === 200) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
             cache.put(event.request, responseToCache);
@@ -46,7 +47,6 @@ self.addEventListener('fetch', event => {
         }
         return networkResponse;
       }).catch(() => {
-        // Если сеть недоступна, пытаемся вернуть index.html для навигации
         if (event.request.mode === 'navigate') {
           return caches.match('/index.html');
         }
