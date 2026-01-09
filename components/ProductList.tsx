@@ -65,15 +65,21 @@ const ProductList: React.FC<ProductListProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.name && formData.price !== undefined) {
+      // Преобразование пустых или некорректных значений в 0
+      const parseNum = (val: any) => {
+        const n = parseFloat(val);
+        return isNaN(n) ? 0 : n;
+      };
+
       const finalProduct: Product = {
         id: editingId || Date.now().toString(),
         name: formData.name!,
         sku: formData.sku || `SKU-${Math.floor(Math.random() * 10000)}`,
-        price: Number(formData.price) || 0,
-        cost: Number(formData.cost) || 0,
-        quantity: (formData.quantity === undefined || formData.quantity === null || isNaN(Number(formData.quantity))) ? 0 : Number(formData.quantity),
+        price: parseNum(formData.price),
+        cost: parseNum(formData.cost),
+        quantity: parseNum(formData.quantity),
         category: formData.category || categories[0] || 'Другое',
-        minStock: Number(formData.minStock) || 0,
+        minStock: parseNum(formData.minStock),
         unit: formData.unit as any || 'шт'
       };
 
@@ -252,7 +258,7 @@ const ProductList: React.FC<ProductListProps> = ({
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ед. изм.</label>
-                  <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value as any})}>
+                  <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" value={formData.unit} onChange={e => setFormData({...formData, unit: formData.unit as any || 'шт'})}>
                     <option value="шт">шт</option><option value="кг">кг</option><option value="упак">упак</option><option value="л">л</option>
                   </select>
                 </div>
@@ -260,10 +266,12 @@ const ProductList: React.FC<ProductListProps> = ({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Закуп (₽)</label>
+                  {/* Fix: Parse string value to number */}
                   <input type="number" step="0.01" inputMode="decimal" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.cost === 0 ? '' : formData.cost} onChange={e => setFormData({...formData, cost: parseFloat(e.target.value) || 0})} />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Продажа (₽)</label>
+                  {/* Fix: Parse string value to number */}
                   <input type="number" step="0.01" inputMode="decimal" required className="w-full p-4 bg-indigo-50 border border-indigo-100 rounded-2xl outline-none font-black text-indigo-600" value={formData.price === 0 ? '' : formData.price} onChange={e => setFormData({...formData, price: parseFloat(e.target.value) || 0})} />
                 </div>
               </div>
@@ -275,16 +283,15 @@ const ProductList: React.FC<ProductListProps> = ({
                     step="any"
                     inputMode="decimal"
                     className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
-                    value={formData.quantity === 0 || formData.quantity === null ? '' : formData.quantity}
-                    onChange={e => {
-                      const val = e.target.value === '' ? null : parseFloat(e.target.value);
-                      setFormData({...formData, quantity: val as any});
-                    }}
+                    value={formData.quantity === 0 || formData.quantity === null || formData.quantity === undefined ? '' : formData.quantity}
+                    /* Fix: Parse string value to number */
+                    onChange={e => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Мин. порог</label>
-                  <input type="number" inputMode="numeric" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.minStock === 0 ? '' : formData.minStock} onChange={e => setFormData({...formData, minStock: parseInt(e.target.value) || 0})} />
+                  {/* Fix: Parse string value to number */}
+                  <input type="number" inputMode="numeric" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.minStock === 0 ? '' : formData.minStock} onChange={e => setFormData({...formData, minStock: parseFloat(e.target.value) || 0})} />
                 </div>
               </div>
             </div>
