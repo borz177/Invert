@@ -15,9 +15,12 @@ const pool = new Pool({
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-/**
- * Инициализация таблицы в базе данных, если она еще не создана
- */
+// Отключаем кэширование на уровне сервера
+app.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  next();
+});
+
 const initDb = async () => {
   try {
     await pool.query(`
@@ -27,7 +30,7 @@ const initDb = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    console.log('✅ База данных готова к работе (таблица app_store проверена)');
+    console.log('✅ База данных готова к работе');
   } catch (err) {
     console.error('❌ Ошибка инициализации БД:', err);
   }
@@ -35,7 +38,6 @@ const initDb = async () => {
 
 initDb();
 
-// Получение данных
 app.get('/api/data', async (req, res) => {
   const { key } = req.query;
   if (!key) return res.status(400).send('Missing key');
@@ -49,13 +51,11 @@ app.get('/api/data', async (req, res) => {
   }
 });
 
-// Сохранение данных
 app.post('/api/data', async (req, res) => {
   const { key, data } = req.body;
   if (!key) return res.status(400).send('Missing key');
 
   try {
-    // В PostgreSQL для JSONB используется заполнитель $2, данные передаются как строка или объект
     await pool.query(`
       INSERT INTO app_store (key, data, updated_at) 
       VALUES ($1, $2, NOW()) 
@@ -71,5 +71,4 @@ app.post('/api/data', async (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Сервер запущен на порту ${PORT}`);
-  console.log(`📍 Локальная база данных подключена`);
 });

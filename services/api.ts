@@ -3,60 +3,71 @@
 import { Product, Transaction, Sale, CashEntry, Supplier, Customer, Employee } from '../types';
 
 /**
- * Если вы развернули фронтенд и бэкенд на одном сервере,
- * API будет доступен по относительному пути /api/data.
+ * ВНИМАНИЕ: Если вы используете домен с HTTPS, API тоже должен быть доступен по HTTPS.
+ * Если IP не указан, приложение пытается использовать текущий адрес хоста.
  */
 const VPS_PUBLIC_IP = '109.73.199.190';
 
 const getApiUrl = () => {
-  // 1. Если настроен конкретный IP
-  if (VPS_PUBLIC_IP && VPS_PUBLIC_IP !== '109.73.199.190') {
-    return `http://${VPS_PUBLIC_IP}:3001/api/data`;
+  // Если работаем локально
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    if (VPS_PUBLIC_IP && VPS_PUBLIC_IP !== '109.73.199.190') {
+      return `http://${VPS_PUBLIC_IP}:3001/api/data`;
+    }
+    return `http://localhost:3001/api/data`;
   }
-  // 2. Если мы на сервере (производство), используем текущий домен
-  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    // Предполагаем, что API проксируется через тот же порт/домен или доступен на 3001
-    return `${window.location.protocol}//${window.location.hostname}:3001/api/data`;
-  }
-  // 3. Локальная разработка без настроенного IP
-  return null;
+
+  // Если на сервере - используем тот же протокол и хост, но порт 3001
+  // (Либо настройте проксирование в nginx с /api на порт 3001)
+  const protocol = window.location.protocol;
+  const host = window.location.hostname;
+  return `${protocol}//${host}:3001/api/data`;
 };
 
 const API_URL = getApiUrl();
 
 export const db = {
   async getData(key: string) {
-    if (!API_URL) {
-      const data = localStorage.getItem(key);
-      return data ? JSON.parse(data) : [];
-    }
+    if (!API_URL) return JSON.parse(localStorage.getItem(key) || '[]');
 
     try {
-      const response = await fetch(`${API_URL}?key=${key}`);
-      if (!response.ok) throw new Error('Server error');
-      return await response.json();
+      const response = await fetch(`${API_URL}?key=${key}`, {
+        method: 'GET',
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const serverData = await response.json();
+
+      // Синхронизируем локальное хранилище с сервером
+      if (serverData) {
+        localStorage.setItem(key, JSON.stringify(serverData));
+        return serverData;
+      }
+      return [];
     } catch (e) {
-      console.warn(`API unavailable for ${key}, using local:`, e);
-      const data = localStorage.getItem(key);
-      return data ? JSON.parse(data) : [];
+      console.warn(`[DB] Ошибка загрузки ${key} с сервера, берем из кэша:`, e);
+      return JSON.parse(localStorage.getItem(key) || '[]');
     }
   },
 
   async saveData(key: string, data: any) {
-    // Offline First: сначала в локальное хранилище
+    // 1. Сначала локально (всегда доступно)
     localStorage.setItem(key, JSON.stringify(data));
 
     if (!API_URL) return;
 
+    // 2. Отправка в облако
     try {
-      await fetch(API_URL, {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, data })
       });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
     } catch (e) {
-      // Тихая ошибка, так как локально данные уже сохранены
-      console.debug(`Cloud sync failed for ${key} (Expected if backend not reachable)`);
+      console.error(`[DB] Ошибка облачной синхронизации для ${key}:`, e);
+      // Не бросаем ошибку дальше, чтобы не блокировать UI,
+      // так как локально данные уже сохранены
     }
   }
 };

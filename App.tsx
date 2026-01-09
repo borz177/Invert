@@ -44,63 +44,76 @@ const App: React.FC = () => {
   const [posCart, setPosCart] = useState<any[]>([]);
   const [warehouseBatch, setWarehouseBatch] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const isInitialized = useRef(false);
 
-  // Первоначальная загрузка данных
-  useEffect(() => {
-    const loadAllData = async () => {
-      setIsLoading(true);
-      try {
-        const auth = localStorage.getItem('isAuthenticated');
-        if (auth === 'true') {
-          const userJson = localStorage.getItem('currentUserObj');
-          if (userJson) {
-            setCurrentUser(JSON.parse(userJson));
-            setIsAuthenticated(true);
-          }
+  // Функция полной загрузки данных
+  const loadAllData = async (silent = false) => {
+    if (!silent) setIsLoading(true);
+    else setIsSyncing(true);
+
+    try {
+      const auth = localStorage.getItem('isAuthenticated');
+      if (auth === 'true') {
+        const userJson = localStorage.getItem('currentUserObj');
+        if (userJson) {
+          setCurrentUser(JSON.parse(userJson));
+          setIsAuthenticated(true);
         }
-
-        const [p, t, s, c, sup, cust, emp, cats, sett, cart, batch] = await Promise.all([
-          db.getData('products'),
-          db.getData('transactions'),
-          db.getData('sales'),
-          db.getData('cashEntries'),
-          db.getData('suppliers'),
-          db.getData('customers'),
-          db.getData('employees'),
-          db.getData('categories'),
-          db.getData('settings'),
-          db.getData('posCart'),
-          db.getData('warehouseBatch')
-        ]);
-
-        if (p) setProducts(p);
-        if (t) setTransactions(t);
-        if (s) setSales(s);
-        if (c) setCashEntries(c);
-        if (sup) setSuppliers(sup);
-        if (cust) setCustomers(cust);
-        if (emp) setEmployees(emp);
-        if (cats && cats.length) setCategories(cats);
-        if (sett && sett.shopName) setSettings(sett);
-        if (cart) setPosCart(cart);
-        if (batch) setWarehouseBatch(batch);
-
-        // Помечаем, что данные загружены и можно начинать синхронизацию В БАЗУ
-        isInitialized.current = true;
-      } catch (e) {
-        console.error("Database connection error", e);
-      } finally {
-        setIsLoading(false);
       }
-    };
-    loadAllData();
-  }, []);
 
-  // Оптимизированная синхронизация (с защитой от перезатирания при загрузке)
+      const [p, t, s, c, sup, cust, emp, cats, sett, cart, batch] = await Promise.all([
+        db.getData('products'),
+        db.getData('transactions'),
+        db.getData('sales'),
+        db.getData('cashEntries'),
+        db.getData('suppliers'),
+        db.getData('customers'),
+        db.getData('employees'),
+        db.getData('categories'),
+        db.getData('settings'),
+        db.getData('posCart'),
+        db.getData('warehouseBatch')
+      ]);
+
+      if (p) setProducts(p);
+      if (t) setTransactions(t);
+      if (s) setSales(s);
+      if (c) setCashEntries(c);
+      if (sup) setSuppliers(sup);
+      if (cust) setCustomers(cust);
+      if (emp) setEmployees(emp);
+      if (cats && cats.length) setCategories(cats);
+      if (sett && sett.shopName) setSettings(sett);
+      if (cart) setPosCart(cart);
+      if (batch) setWarehouseBatch(batch);
+
+      isInitialized.current = true;
+    } catch (e) {
+      console.error("Critical Sync Error", e);
+    } finally {
+      setIsLoading(false);
+      setIsSyncing(false);
+    }
+  };
+
+  // Первоначальная загрузка
   useEffect(() => {
-    if (isInitialized.current && !isLoading) {
-      // Используем setTimeout как простой debounce, чтобы не спамить запросами
+    loadAllData();
+
+    // ФОНОВАЯ СИНХРОНИЗАЦИЯ: каждые 30 секунд проверяем обновления с других устройств
+    const interval = setInterval(() => {
+      if (isAuthenticated) {
+        loadAllData(true);
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
+
+  // Сохранение изменений в облако при действиях пользователя
+  useEffect(() => {
+    if (isInitialized.current && !isLoading && !isSyncing) {
       const timer = setTimeout(() => {
         db.saveData('products', products);
         db.saveData('transactions', transactions);
@@ -113,10 +126,10 @@ const App: React.FC = () => {
         db.saveData('settings', settings);
         db.saveData('posCart', posCart);
         db.saveData('warehouseBatch', warehouseBatch);
-      }, 500);
+      }, 1000); // Задержка 1 сек, чтобы не частить запросами при быстром вводе
       return () => clearTimeout(timer);
     }
-  }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch, isLoading]);
+  }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch, isLoading, isSyncing]);
 
   const handleLogin = (user: Employee) => {
     setIsAuthenticated(true);
@@ -132,6 +145,7 @@ const App: React.FC = () => {
     localStorage.removeItem('currentUserObj');
   };
 
+  // ... остальные хендлеры (handleSale, handleCashEntry и т.д.) остаются без изменений
   const updateProductStock = (id: string, diff: number) => {
     setProducts(prev => prev.map(p => p.id === id ? { ...p, quantity: p.quantity + diff } : p));
   };
@@ -348,6 +362,7 @@ const App: React.FC = () => {
         <h1 className="text-xl font-black flex items-center gap-2 cursor-pointer" onClick={() => setView('DASHBOARD')}>
           <i className="fas fa-store"></i>
           <span>{settings.shopName}</span>
+          {isSyncing && <i className="fas fa-sync fa-spin text-[10px] text-slate-300 ml-2"></i>}
         </h1>
         <div className="flex items-center gap-3">
           <button onClick={() => setView('PROFILE')} className="bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 flex items-center gap-2">
@@ -356,6 +371,7 @@ const App: React.FC = () => {
           </button>
         </div>
       </header>
+      {/* ... остаток разметки App.tsx остается без изменений */}
       <main className="flex-1 overflow-y-auto p-4 pb-28 no-scrollbar"><div className="max-w-5xl mx-auto">{renderView()}</div></main>
       {isQuickMenuOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-end justify-center pb-24 px-4" onClick={() => setQuickMenuOpen(false)}>
