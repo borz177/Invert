@@ -96,8 +96,9 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// Вход
 app.post('/api/auth/login', async (req, res) => {
+  console.log('🔍 Получен запрос:', req.body);
+
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: 'Email и пароль обязательны' });
@@ -105,32 +106,34 @@ app.post('/api/auth/login', async (req, res) => {
 
   try {
     const cleanEmail = email.toLowerCase().trim();
-
-    // ВАЖНО: запрашиваем ВСЕ поля, включая password_hash
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
 
     if (result.rows.length === 0) {
+      console.log('❌ Пользователь не найден:', cleanEmail);
       return res.status(401).json({ error: 'Неверный email или пароль' });
     }
 
     const user = result.rows[0];
+    console.log('👤 Найден пользователь:', user.email);
 
-    // Проверяем, что password_hash существует
     if (!user.password_hash) {
-      console.error('❌ У пользователя отсутствует password_hash:', user.email);
+      console.error('❌ У пользователя отсутствует password_hash');
       return res.status(500).json({ error: 'Ошибка сервера' });
     }
 
+    console.log('🔑 Сравниваем пароль с хешем...');
     const isValid = await bcrypt.compare(password, user.password_hash);
+    console.log('✅ Результат сравнения:', isValid);
 
     if (!isValid) {
       return res.status(401).json({ error: 'Неверный email или пароль' });
     }
 
     const { password_hash, ...safeUser } = user;
+    console.log('🎉 Вход успешен для:', safeUser.email);
     res.json(safeUser);
   } catch (err) {
-    console.error('Ошибка входа:', err);
+    console.error('💥 Ошибка при входе:', err);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
