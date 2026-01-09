@@ -1,61 +1,64 @@
 // services/api.ts
-import { Product, Transaction, Sale, CashEntry, Supplier, Customer, Employee } from '../types';
-
-/**
- * В продакшене все API-запросы идут через тот же домен (без указания порта),
- * потому что Nginx проксирует /api → localhost:3001.
- */
-const getApiUrl = () => {
-  const { protocol, hostname } = window.location;
-
-  // Для локальной разработки
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return `${protocol}//${hostname}:3001/api/data`;
-  }
-
-  // Для продакшена — используем относительный путь
-  return '/api/data';
-};
-
-const API_URL = getApiUrl();
-
 export const db = {
+  auth: {
+    async register(email: string, password: string, name: string): Promise<User> {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    async login(email: string, password: string): Promise<User> {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+  },
+
   async getData(key: string) {
+    const userJson = localStorage.getItem('currentUser');
+    if (!userJson) return null;
+    const user: User = JSON.parse(userJson);
+
     try {
-      const response = await fetch(`${API_URL}?key=${encodeURIComponent(key)}`, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-        credentials: 'same-origin'
+      const response = await fetchWithTimeout(`${API_BASE}/data`, {
+        method: 'POST', // ← ИЗМЕНЕНО НА POST
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, user_id: user.id })
       });
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
       const data = await response.json();
-      localStorage.setItem(key, JSON.stringify(data));
+      localStorage.setItem(`cache_${user.id}_${key}`, JSON.stringify(data));
       return data;
     } catch (e) {
-      console.warn(`[Sync] Ошибка загрузки ${key}. Используем кэш.`, e);
-      const local = localStorage.getItem(key);
+      console.warn(`[Sync] Error loading ${key}:`, e);
+      const local = localStorage.getItem(`cache_${user.id}_${key}`);
       return local ? JSON.parse(local) : null;
     }
   },
 
   async saveData(key: string, data: any) {
-    // Сначала сохраняем локально
-    localStorage.setItem(key, JSON.stringify(data));
+    const userJson = localStorage.getItem('currentUser');
+    if (!userJson) return false;
+    const user: User = JSON.parse(userJson);
+
+    localStorage.setItem(`cache_${user.id}_${key}`, JSON.stringify(data));
 
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetchWithTimeout(`${API_BASE}/data`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ key, data })
+        body: JSON.stringify({ key, data, user_id: user.id })
       });
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return true;
+      return response.ok;
     } catch (e) {
-      console.error(`[Sync] Ошибка сохранения ${key}:`, e);
       return false;
     }
   }

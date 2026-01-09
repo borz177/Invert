@@ -1,95 +1,81 @@
 
 import React, { useState } from 'react';
-import { Employee } from '../types';
+import { User } from '../types';
+import { db } from '../services/api';
 
 interface LoginProps {
-  onLogin: (user: Employee) => void;
-  employees: Employee[];
+  onLogin: (user: User) => void;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, employees }) => {
-  const [username, setUsername] = useState('');
+const Login: React.FC<LoginProps> = ({ onLogin }) => {
+  const [isRegister, setIsRegister] = useState(false);
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
+    setError('');
 
-    const cleanUsername = username.trim().toLowerCase();
-    const cleanPassword = password.trim();
-
-    // Системный админ
-    if (cleanUsername === 'admin' && cleanPassword === 'admin123') {
-      // Fix: Added missing properties to satisfy Employee interface
-      onLogin({
-        id: 'admin',
-        name: 'Администратор',
-        role: 'управляющий',
-        login: 'admin',
-        password: '',
-        salary: 0,
-        revenuePercent: 0,
-        profitPercent: 0,
-        permissions: {
-          canEditProduct: true,
-          canCreateProduct: true,
-          canDeleteProduct: true,
-          canShowCost: true
-        }
-      });
-      return;
-    }
-
-    // Поиск в списке сотрудников
-    const found = employees.find(emp =>
-      emp.login.trim().toLowerCase() === cleanUsername &&
-      emp.password.trim() === cleanPassword
-    );
-
-    if (found) {
-      onLogin(found);
-    } else {
-      setError('Неверный логин или пароль');
-      setTimeout(() => setError(''), 3000);
-    }
-  };
-
-  const handleResetData = () => {
-    if (window.confirm('Вы действительно хотите полностью очистить все данные приложения?')) {
-      localStorage.clear();
-      window.location.reload();
+    try {
+      let user: User;
+      if (isRegister) {
+        user = await db.auth.register(email, password, name);
+      } else {
+        user = await db.auth.login(email, password);
+      }
+      onLogin(user);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="fixed inset-0 bg-slate-50 flex items-center justify-center p-4 z-[200]">
       <div className="w-full max-w-md bg-white p-8 rounded-[40px] shadow-2xl border border-slate-100 animate-slide-up relative overflow-hidden">
-
-        {/* Декоративный фон как на некоторых современных UI */}
         <div className="absolute top-0 left-0 w-full h-1 bg-indigo-600"></div>
 
         <div className="text-center mb-8 mt-4">
           <div className="w-20 h-20 bg-indigo-600 text-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-indigo-100">
-            <i className="fas fa-lock text-3xl"></i>
+            <i className={`fas ${isRegister ? 'fa-user-plus' : 'fa-lock'} text-3xl`}></i>
           </div>
           <h1 className="text-2xl font-black text-slate-800 tracking-tight">ИнвентарьПро</h1>
-          <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-1">Вход для персонала</p>
+          <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-1">
+            {isRegister ? 'Создание аккаунта' : 'Вход в систему'}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {isRegister && (
+            <div className="relative group">
+              <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-500 transition-colors">
+                <i className="fas fa-id-card text-sm"></i>
+              </div>
+              <input
+                type="text" required
+                className="w-full p-5 pl-14 bg-slate-50 border border-slate-100 rounded-[24px] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:bg-white transition-all font-medium text-slate-700"
+                placeholder="Ваше имя"
+                value={name}
+                onChange={e => setName(e.target.value)}
+              />
+            </div>
+          )}
+
           <div className="relative group">
             <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-500 transition-colors">
-              <i className="fas fa-user text-sm"></i>
+              <i className="fas fa-envelope text-sm"></i>
             </div>
             <input
-              type="text"
-              required
-              autoComplete="username"
+              type="text" required
               className="w-full p-5 pl-14 bg-slate-50 border border-slate-100 rounded-[24px] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:bg-white transition-all font-medium text-slate-700"
-              placeholder="Логин"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
+              placeholder="Email / Логин"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
             />
           </div>
 
@@ -98,21 +84,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, employees }) => {
               <i className="fas fa-key text-sm"></i>
             </div>
             <input
-              type={showPassword ? "text" : "password"}
-              required
-              autoComplete="current-password"
-              className="w-full p-5 pl-14 pr-14 bg-slate-50 border border-slate-100 rounded-[24px] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:bg-white transition-all font-medium text-slate-700"
+              type="password" required
+              className="w-full p-5 pl-14 bg-slate-50 border border-slate-100 rounded-[24px] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:bg-white transition-all font-medium text-slate-700"
               placeholder="Пароль"
               value={password}
               onChange={e => setPassword(e.target.value)}
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 hover:text-indigo-500 transition-colors"
-            >
-              <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'} text-sm`}></i>
-            </button>
           </div>
 
           {error && (
@@ -123,14 +100,22 @@ const Login: React.FC<LoginProps> = ({ onLogin, employees }) => {
           )}
 
           <button
-            type="submit"
-            className="w-full bg-indigo-600 text-white p-5 rounded-[24px] font-black shadow-xl shadow-indigo-100 active:scale-[0.98] transition-all mt-6 text-lg hover:bg-indigo-700"
+            type="submit" disabled={loading}
+            className="w-full bg-indigo-600 text-white p-5 rounded-[24px] font-black shadow-xl shadow-indigo-100 active:scale-[0.98] transition-all mt-6 text-lg hover:bg-indigo-700 flex items-center justify-center"
           >
-            войти
+            {loading ? <i className="fas fa-spinner fa-spin mr-2"></i> : null}
+            {isRegister ? 'зарегистрироваться' : 'войти'}
           </button>
         </form>
 
-
+        <div className="mt-8 text-center">
+          <button
+            onClick={() => setIsRegister(!isRegister)}
+            className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] hover:text-indigo-700 transition-colors"
+          >
+            {isRegister ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Регистрация'}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -151,7 +151,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
                 <h4 className={`font-bold text-slate-800 text-sm truncate ${op.isDeleted ? 'line-through' : ''}`}>{op.title}</h4>
-                <span className="text-[8px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200 font-black uppercase tracking-tighter shrink-0">Отв: {op.responsible}</span>
+                <span className="text-[8px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200 font-black uppercase tracking-tighter shrink-0">{op.responsible}</span>
               </div>
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter truncate">{op.subtitle}</p>
             </div>

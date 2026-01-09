@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Product, Transaction, Sale, CashEntry, AppView, Supplier, Customer, Employee, AppSettings } from './types';
+import { Product, Transaction, Sale, CashEntry, AppView, Supplier, Customer, Employee, AppSettings, User } from './types';
 import { NAV_ITEMS, QUICK_ACTIONS, INITIAL_CATEGORIES } from './constants';
 import { db } from './services/api';
 import Dashboard from './components/Dashboard';
@@ -28,10 +28,9 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [currentUser, setCurrentUser] = useState<Employee | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [view, setView] = useState<AppView>('DASHBOARD');
 
-  // Состояния данных
   const [products, setProducts] = useState<Product[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
@@ -44,20 +43,17 @@ const App: React.FC = () => {
 
   const [posCart, setPosCart] = useState<any[]>([]);
   const [warehouseBatch, setWarehouseBatch] = useState<any[]>([]);
-
-  // Состояния синхронизации
   const [isLoading, setIsLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<'IDLE' | 'SYNCING' | 'ERROR'>('IDLE');
   const [isQuickMenuOpen, setQuickMenuOpen] = useState(false);
 
   const isDataLoaded = useRef(false);
-  const isCurrentlyFetching = useRef(false);
 
-  // Глобальная функция загрузки всех данных
   const fetchAllData = async (silent = false) => {
-    if (isCurrentlyFetching.current) return;
-    isCurrentlyFetching.current = true;
-
+    if (!isAuthenticated) {
+      setIsLoading(false);
+      return;
+    }
     if (!silent) setIsLoading(true);
     setSyncStatus('SYNCING');
 
@@ -76,7 +72,6 @@ const App: React.FC = () => {
         db.getData('warehouseBatch')
       ]);
 
-      // Массовое обновление стейта
       if (p !== null) setProducts(p);
       if (t !== null) setTransactions(t);
       if (s !== null) setSales(s);
@@ -92,43 +87,34 @@ const App: React.FC = () => {
       isDataLoaded.current = true;
       setSyncStatus('IDLE');
     } catch (e) {
-      console.error("Fetch Error:", e);
+      console.error('Fetch all data error:', e);
       setSyncStatus('ERROR');
     } finally {
+      // Это критически важно: снимаем загрузку в любом случае
       setIsLoading(false);
-      isCurrentlyFetching.current = false;
     }
   };
 
-  // 1. Начальная загрузка и проверка авторизации
   useEffect(() => {
-    const auth = localStorage.getItem('isAuthenticated');
-    if (auth === 'true') {
-      const userJson = localStorage.getItem('currentUserObj');
-      if (userJson) {
-        setCurrentUser(JSON.parse(userJson));
-        setIsAuthenticated(true);
-      }
+    const userJson = localStorage.getItem('currentUser');
+    if (userJson) {
+      setCurrentUser(JSON.parse(userJson));
+      setIsAuthenticated(true);
+    } else {
+      setIsLoading(false);
     }
-    fetchAllData();
   }, []);
 
-  // 2. Авто-обновление данных (каждые 30 секунд) для синхронизации между устройствами
   useEffect(() => {
-    if (!isAuthenticated) return;
-    const interval = setInterval(() => fetchAllData(true), 30000);
-    return () => clearInterval(interval);
+    if (isAuthenticated) fetchAllData();
   }, [isAuthenticated]);
 
-  // 3. Сохранение изменений в облако (Debounced)
-  // ВАЖНО: Мы сохраняем ТОЛЬКО если данные были успешно загружены (isDataLoaded.current),
-  // чтобы пустой начальный стейт [] не стер базу данных на сервере.
   useEffect(() => {
-    if (!isDataLoaded.current || isLoading || isCurrentlyFetching.current) return;
+    if (!isDataLoaded.current || isLoading || !isAuthenticated) return;
 
-    const syncToCloud = async () => {
+    const timer = setTimeout(() => {
       setSyncStatus('SYNCING');
-      const results = await Promise.all([
+      Promise.all([
         db.saveData('products', products),
         db.saveData('transactions', transactions),
         db.saveData('sales', sales),
@@ -140,107 +126,48 @@ const App: React.FC = () => {
         db.saveData('settings', settings),
         db.saveData('posCart', posCart),
         db.saveData('warehouseBatch', warehouseBatch)
-      ]);
-
-      const hasError = results.some(r => r === false);
-      setSyncStatus(hasError ? 'ERROR' : 'IDLE');
-    };
-
-    const timer = setTimeout(syncToCloud, 1500);
+      ]).then(results => {
+        setSyncStatus(results.every(r => r) ? 'IDLE' : 'ERROR');
+      });
+    }, 2000);
     return () => clearTimeout(timer);
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch]);
 
-  const handleLogin = (user: Employee) => {
+  const handleLogin = (user: User) => {
     setIsAuthenticated(true);
     setCurrentUser(user);
-    localStorage.setItem('isAuthenticated', 'true');
-    localStorage.setItem('currentUserObj', JSON.stringify(user));
+    localStorage.setItem('currentUser', JSON.stringify(user));
+    isDataLoaded.current = false;
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
     setCurrentUser(null);
-    localStorage.removeItem('isAuthenticated');
-    localStorage.removeItem('currentUserObj');
+    localStorage.removeItem('currentUser');
+    window.location.reload();
   };
 
-  // Логика обновления остатков
-  const updateProductStock = (id: string, diff: number) => {
-    setProducts(prev => prev.map(p => p.id === id ? { ...p, quantity: p.quantity + diff } : p));
-  };
-
-  // Обработка продаж
-  const handleSale = (s: Sale) => {
-    const saleWithEmployee = { ...s, employeeId: currentUser?.id || 'admin' };
-    setSales([saleWithEmployee, ...sales]);
-    s.items.forEach(i => updateProductStock(i.productId, -i.quantity));
-
-    if (s.paymentMethod === 'DEBT' && s.customerId) {
-      setCustomers(prev => prev.map(c => c.id === s.customerId ? { ...c, debt: c.debt + s.total } : c));
-    } else {
-      const clientName = customers.find(c => c.id === s.customerId)?.name || '';
-      setCashEntries([{
-        id: `sale-${s.id}`,
-        amount: s.total,
-        type: 'INCOME',
-        category: 'Продажа',
-        date: new Date().toISOString(),
-        employeeId: currentUser?.id || 'admin',
-        description: `Чек №${s.id.slice(-4)}${clientName ? ' (Кл: ' + clientName + ')' : ''}`
-      }, ...cashEntries]);
-    }
-    setPosCart([]);
-  };
-
-  const handleCashEntry = (e: CashEntry) => {
-    const entryWithEmployee = { ...e, employeeId: currentUser?.id || 'admin' };
-    setCashEntries([entryWithEmployee, ...cashEntries]);
-    if (e.type === 'INCOME' && e.customerId) {
-      setCustomers(prev => prev.map(c => c.id === e.customerId ? { ...c, debt: Math.max(0, c.debt - e.amount) } : c));
-    }
-    if (e.type === 'EXPENSE' && e.supplierId) {
-      setSuppliers(prev => prev.map(s => s.id === e.supplierId ? { ...s, debt: Math.max(-9999999, s.debt - e.amount) } : s));
-    }
-  };
-
-  const handleWarehouseIntake = (ts: Transaction[]) => {
-    const tsWithEmp = ts.map(t => ({ ...t, employeeId: currentUser?.id || 'admin' }));
-    setTransactions([...tsWithEmp, ...transactions]);
-
-    tsWithEmp.forEach(t => {
-      updateProductStock(t.productId, t.quantity);
-      const totalCost = t.quantity * (t.pricePerUnit || 0);
-      if (t.type === 'IN' && t.supplierId && totalCost > 0) {
-        if (t.paymentMethod === 'DEBT') {
-          setSuppliers(prev => prev.map(s => s.id === t.supplierId ? { ...s, debt: s.debt + totalCost } : s));
-        } else if (t.paymentMethod === 'CASH') {
-          setCashEntries([{
-            id: `intake-${t.id}`,
-            amount: totalCost,
-            type: 'EXPENSE',
-            category: 'Закупка товара',
-            date: new Date().toISOString(),
-            employeeId: currentUser?.id || 'admin',
-            supplierId: t.supplierId,
-            description: `Оплата за ${products.find(p => p.id === t.productId)?.name} (${t.quantity} шт.)`
-          }, ...cashEntries]);
-        }
-      }
-    });
-    setWarehouseBatch([]);
-  };
-
-  // Роутинг вьюх
   const renderView = () => {
     if (!currentUser) return null;
-    const { permissions } = currentUser;
+
+    if (currentUser.role === 'admin' && view === 'TENANT_ADMIN') {
+        return (
+            <div className="p-6 bg-white rounded-3xl shadow-sm border border-slate-100">
+                <h2 className="text-xl font-black mb-4 text-indigo-600">Управление аккаунтами</h2>
+                <div className="p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center">
+                    <i className="fas fa-tools text-2xl text-slate-300 mb-2"></i>
+                    <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest">Панель управления пользователями находится в разработке</p>
+                </div>
+            </div>
+        );
+    }
 
     switch (view) {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} />;
       case 'PRODUCTS': return (
         <ProductList
           products={products} categories={categories}
-          canEdit={permissions.canEditProduct} canCreate={permissions.canCreateProduct} canDelete={permissions.canDeleteProduct} showCost={permissions.canShowCost}
+          canEdit={true} canCreate={true} canDelete={true} showCost={true}
           onAdd={p => setProducts([p, ...products])} onAddBulk={ps => setProducts([...ps, ...products])}
           onUpdate={p => setProducts(products.map(x => x.id === p.id ? p : x))}
           onDelete={id => setProducts(products.filter(x => x.id !== id))}
@@ -259,60 +186,15 @@ const App: React.FC = () => {
         <Warehouse
           products={products} suppliers={suppliers} transactions={transactions}
           batch={warehouseBatch} setBatch={setWarehouseBatch}
-          onTransaction={t => handleWarehouseIntake([t])}
-          onTransactionsBulk={ts => handleWarehouseIntake(ts)}
+          onTransaction={t => setTransactions([t, ...transactions])}
+          onTransactionsBulk={ts => setTransactions([...ts, ...transactions])}
         />
       );
-      case 'SALES': return (
-        <POS
-          products={products} customers={customers} cart={posCart} setCart={setPosCart}
-          onSale={handleSale}
-        />
-      );
-      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={handleCashEntry} />;
+      case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} onSale={(s) => setSales([s, ...sales])} />;
+      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={(e) => setCashEntries([e, ...cashEntries])} />;
       case 'REPORTS': return <Reports sales={sales} products={products} transactions={transactions} />;
-      case 'ALL_OPERATIONS': return (
-        <AllOperations
-          sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees}
-          onUpdateTransaction={() => {}}
-          onDeleteTransaction={(id) => setTransactions(prev => prev.map(t => t.id === id ? {...t, isDeleted: true} : t))}
-          onDeleteSale={(id) => setSales(prev => prev.map(s => s.id === id ? {...s, isDeleted: true} : s))}
-          onDeleteCashEntry={(id) => setCashEntries(prev => prev.filter(x => x.id !== id))}
-        />
-      );
-      case 'SUPPLIERS': return (
-        <Suppliers
-          suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products}
-          onAdd={s => setSuppliers([...suppliers, { ...s, debt: 0 }])}
-          onUpdate={s => setSuppliers(suppliers.map(x => x.id === s.id ? s : x))}
-          onDelete={id => setSuppliers(suppliers.filter(x => x.id !== id))}
-        />
-      );
-      case 'CLIENTS': return (
-        <Clients
-          customers={customers} sales={sales} cashEntries={cashEntries}
-          onAdd={c => setCustomers([...customers, { ...c, debt: 0 }])}
-          onUpdate={c => setCustomers(customers.map(x => x.id === c.id ? c : x))}
-          onDelete={id => setCustomers(customers.filter(x => x.id !== id))}
-        />
-      );
-      case 'EMPLOYEES': return (
-        <Employees
-          employees={employees} sales={sales}
-          onAdd={e => setEmployees([...employees, e])}
-          onUpdate={e => setEmployees(employees.map(x => x.id === e.id ? e : x))}
-          onDelete={id => setEmployees(employees.filter(x => x.id !== id))}
-        />
-      );
-      case 'PRICE_LIST': return <PriceList products={products} showCost={permissions.canShowCost} />;
-      case 'STOCK_REPORT': return <StockReport products={products} />;
-      case 'PROFILE': return <Profile user={currentUser} sales={sales} onLogout={handleLogout} />;
-      case 'SETTINGS': return <Settings settings={settings} onUpdate={setSettings} onClear={() => {
-        if(window.confirm('ОЧИСТИТЬ ВСЕ ДАННЫЕ?')) {
-          localStorage.clear();
-          window.location.reload();
-        }
-      }} />;
+      case 'PROFILE': return <Profile user={{id: currentUser.id, name: currentUser.name, role: 'управляющий', login: currentUser.email, password: '', salary: 0, revenuePercent: 0, profitPercent: 0, permissions: {canEditProduct: true, canCreateProduct: true, canDeleteProduct: true, canShowCost: true}} as Employee} sales={sales} onLogout={handleLogout} />;
+      case 'SETTINGS': return <Settings settings={settings} onUpdate={setSettings} onClear={() => {}} />;
       case 'MORE_MENU': return (
         <div className="space-y-4 animate-fade-in pb-10">
           <h2 className="text-2xl font-black text-slate-800 px-2 mb-6">Еще</h2>
@@ -330,10 +212,10 @@ const App: React.FC = () => {
               <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i className="fas fa-users"></i></div>
               <span className="font-bold text-slate-700">Клиенты</span>
             </button>
-            {(currentUser.role === 'управляющий' || currentUser.id === 'admin') && (
-              <button onClick={() => setView('EMPLOYEES')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
-                <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center"><i className="fas fa-user-tie"></i></div>
-                <span className="font-bold text-slate-700">Сотрудники</span>
+            {currentUser.role === 'admin' && (
+              <button onClick={() => setView('TENANT_ADMIN')} className="w-full bg-slate-800 text-white p-5 rounded-3xl shadow-sm flex items-center gap-4 hover:bg-black transition-colors">
+                <div className="w-12 h-12 bg-white/10 text-white rounded-2xl flex items-center justify-center"><i className="fas fa-crown"></i></div>
+                <span className="font-bold">Панель Суперадмина</span>
               </button>
             )}
             <button onClick={() => setView('SETTINGS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
@@ -350,12 +232,11 @@ const App: React.FC = () => {
   if (isLoading) return (
     <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-[300]">
       <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-      <p className="mt-6 font-black text-indigo-600 uppercase tracking-[0.2em] text-xs">Загрузка данных...</p>
-      <p className="mt-2 text-slate-400 text-[10px] font-bold">Синхронизация с сервером</p>
+      <p className="mt-6 font-black text-indigo-600 uppercase tracking-[0.2em] text-xs">Подключение к системе...</p>
     </div>
   );
 
-  if (!isAuthenticated) return <Login onLogin={handleLogin} employees={employees} />;
+  if (!isAuthenticated) return <Login onLogin={handleLogin} />;
 
   return (
     <div className={`flex flex-col h-screen overflow-hidden ${settings.darkMode ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-900'}`}>
@@ -363,7 +244,6 @@ const App: React.FC = () => {
         <h1 className="text-xl font-black flex items-center gap-2 cursor-pointer" onClick={() => setView('DASHBOARD')}>
           <i className="fas fa-store"></i>
           <span>{settings.shopName}</span>
-          {/* Индикатор синхронизации */}
           <div className="ml-2 flex items-center">
             {syncStatus === 'SYNCING' && <i className="fas fa-sync fa-spin text-[10px] text-indigo-400"></i>}
             {syncStatus === 'ERROR' && <i className="fas fa-exclamation-circle text-[10px] text-red-500 animate-pulse"></i>}

@@ -1,4 +1,11 @@
 
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'user';
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -16,7 +23,7 @@ export interface Supplier {
   name: string;
   phone: string;
   email?: string;
-  debt: number; // Наш долг перед поставщиком
+  debt: number;
 }
 
 export interface Customer {
@@ -58,7 +65,7 @@ export interface Transaction {
   note: string;
   employeeId: string;
   pricePerUnit?: number;
-  paymentMethod?: 'CASH' | 'DEBT'; // Метод оплаты при закупке
+  paymentMethod?: 'CASH' | 'DEBT';
   isDeleted?: boolean;
 }
 
@@ -87,7 +94,7 @@ export interface CashEntry {
   description: string;
   employeeId: string;
   customerId?: string;
-  supplierId?: string; // Для оплаты долга поставщику
+  supplierId?: string;
 }
 
 export interface AppSettings {
@@ -112,4 +119,5 @@ export type AppView =
   | 'STOCK_REPORT'
   | 'PROFILE'
   | 'SETTINGS'
-  | 'MORE_MENU';
+  | 'MORE_MENU'
+  | 'TENANT_ADMIN'; // Вид для суперадмина
