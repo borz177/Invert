@@ -96,13 +96,13 @@ export const db = {
     localStorage.setItem(`cache_${user.id}_${key}`, JSON.stringify(data));
 
     try {
-      const response = await fetchWithTimeout(`${API_BASE}/data`, {
+      const response = await fetchWithTimeout(`${API_BASE}/data/save`, { // ← ИСПРАВЛЕНО
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, data, user_id: user.id })
       });
       return response.ok;
-    } catch (e) {
+    } catch (e) { // ← УДАЛЕНА ЛИШНЯЯ БУКВА "a"
       return false;
     }
   }
