@@ -1,4 +1,4 @@
-// backend/server.js
+
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3001;
 
 // CORS
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://babyborz.shop'],
+  origin: ['http://localhost:5173', 'https://babyborz.shop', 'http://localhost:3000'],
   credentials: true
 }));
 
@@ -25,7 +25,6 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL
 });
 
-// Создаём хеш пароля admin123 один раз
 const ADMIN_PASSWORD_HASH = '$2b$10$G7hJkLmNpQrStUvWxYzAeO9KlMnOpQrStUvWxYzAeO9KlMnOpQrS';
 
 // Инициализация БД
@@ -33,7 +32,6 @@ const initDb = async () => {
   try {
     await pool.query('CREATE EXTENSION IF NOT EXISTS "pgcrypto"');
 
-    // Таблица пользователей
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -45,7 +43,6 @@ const initDb = async () => {
       )
     `);
 
-    // Таблица данных
     await pool.query(`
       CREATE TABLE IF NOT EXISTS app_store (
         user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -56,7 +53,6 @@ const initDb = async () => {
       )
     `);
 
-    // Суперадмин
     const adminCheck = await pool.query('SELECT id FROM users WHERE email = $1', ['admin']);
     if (adminCheck.rows.length === 0) {
       await pool.query(
@@ -87,7 +83,9 @@ app.post('/api/auth/register', async (req, res) => {
       'INSERT INTO users (email, password_hash, name) VALUES ($1, $2, $3) RETURNING id, email, name, role',
       [email.toLowerCase().trim(), hashedPassword, name]
     );
-    res.status(201).json(result.rows[0]);
+    // Добавляем ownerId для совместимости
+    const user = result.rows[0];
+    res.status(201).json({ ...user, ownerId: user.id });
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Пользователь уже существует' });
@@ -96,9 +94,8 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+// Вход (поддержка и владельцев, и сотрудников)
 app.post('/api/auth/login', async (req, res) => {
-  console.log('🔍 Получен запрос:', req.body);
-
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: 'Email и пароль обязательны' });
@@ -106,34 +103,45 @@ app.post('/api/auth/login', async (req, res) => {
 
   try {
     const cleanEmail = email.toLowerCase().trim();
+    
+    // 1. Ищем в таблице владельцев (users)
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
 
-    if (result.rows.length === 0) {
-      console.log('❌ Пользователь не найден:', cleanEmail);
-      return res.status(401).json({ error: 'Неверный email или пароль' });
+    if (result.rows.length > 0) {
+      const user = result.rows[0];
+      const isValid = await bcrypt.compare(password, user.password_hash);
+      
+      if (isValid) {
+        const { password_hash, ...safeUser } = user;
+        return res.json({ ...safeUser, ownerId: safeUser.id });
+      }
     }
 
-    const user = result.rows[0];
-    console.log('👤 Найден пользователь:', user.email);
-
-    if (!user.password_hash) {
-      console.error('❌ У пользователя отсутствует password_hash');
-      return res.status(500).json({ error: 'Ошибка сервера' });
+    // 2. Если не нашли или пароль не подошел, ищем в сотрудниках (JSON в app_store)
+    const empData = await pool.query("SELECT user_id, data FROM app_store WHERE key = 'employees'");
+    
+    for (const row of empData.rows) {
+      const employees = row.data || [];
+      const employee = employees.find(e => 
+        (e.login.toLowerCase() === cleanEmail || e.login === email) && 
+        e.password === password
+      );
+      
+      if (employee) {
+        return res.json({
+          id: employee.id,
+          email: employee.login,
+          name: employee.name,
+          role: employee.role,
+          ownerId: row.user_id, // Очень важно: ID владельца для доступа к данным магазина
+          permissions: employee.permissions
+        });
+      }
     }
 
-    console.log('🔑 Сравниваем пароль с хешем...');
-    const isValid = await bcrypt.compare(password, user.password_hash);
-    console.log('✅ Результат сравнения:', isValid);
-
-    if (!isValid) {
-      return res.status(401).json({ error: 'Неверный email или пароль' });
-    }
-
-    const { password_hash, ...safeUser } = user;
-    console.log('🎉 Вход успешен для:', safeUser.email);
-    res.json(safeUser);
+    return res.status(401).json({ error: 'Неверный логин или пароль' });
   } catch (err) {
-    console.error('💥 Ошибка при входе:', err);
+    console.error('Ошибка при входе:', err);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -155,7 +163,7 @@ app.post('/api/data', async (req, res) => {
       return res.json(allData);
     }
 
-    // Обычный пользователь — только свои данные
+    // Обычный пользователь или сотрудник — данные конкретного ownerId
     const result = await pool.query(
       'SELECT data FROM app_store WHERE user_id = $1 AND key = $2',
       [user_id, key]
