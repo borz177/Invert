@@ -18,6 +18,7 @@ export interface Product {
   category: string;
   minStock: number;
   unit: 'шт' | 'кг' | 'упак' | 'ящик' | 'л' | 'мл';
+  image?: string;
 }
 
 export interface Supplier {

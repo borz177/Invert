@@ -27,7 +27,6 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
 
   if (!user) return null;
 
-  // Use string casting to allow comparison with 'client' role, which is not in the Employee role union
   const isClient = (user.role as string) === 'client';
   const isOwner = (user.role as string) === 'admin' || (user as any).ownerId === user.id;
 
@@ -35,7 +34,6 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
   const purchasesTodayCount = sales.filter(s => s.customerId === user.id && s.date.startsWith(today) && !s.isDeleted).length;
   const totalAmountSales = sales.filter(s => !s.isDeleted).reduce((acc, s) => acc + s.total, 0);
 
-  // Долг для клиента (передается через объект user как доп. поле)
   const clientDebt = (user as any).debt || 0;
 
   const handleSave = async (e: React.FormEvent) => {
@@ -61,7 +59,8 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
         <button onClick={onLogout} className="absolute top-6 right-6 w-10 h-10 bg-red-50 text-red-500 rounded-full flex items-center justify-center active:bg-red-100 transition-colors" title="Выйти">
           <i className="fas fa-sign-out-alt"></i>
         </button>
-        {(isOwner || isClient) && !isEditing && (
+        {/* Кнопка редактирования скрыта для клиентов */}
+        {isOwner && !isEditing && (
           <button onClick={() => setIsEditing(true)} className="absolute top-6 left-6 w-10 h-10 bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center active:bg-indigo-100 transition-colors" title="Редактировать">
             <i className="fas fa-pen text-xs"></i>
           </button>

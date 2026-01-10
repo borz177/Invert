@@ -45,6 +45,17 @@ const ProductList: React.FC<ProductListProps> = ({
     unit: 'шт'
   });
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData({ ...formData, image: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const openEdit = (p: Product) => {
     if (!canEdit) return;
     setFormData({ ...p });
@@ -82,7 +93,8 @@ const ProductList: React.FC<ProductListProps> = ({
         quantity: parseNum(formData.quantity),
         category: formData.category || categories[0] || 'Другое',
         minStock: parseNum(formData.minStock),
-        unit: formData.unit as any || 'шт'
+        unit: (formData.unit as any) || 'шт',
+        image: formData.image
       };
 
       if (editingId) {
@@ -222,9 +234,16 @@ const ProductList: React.FC<ProductListProps> = ({
           {(searchTerm ? filteredBySearch : activeProducts).map(p => (
             <div key={p.id} className="bg-white p-5 rounded-[32px] shadow-sm border border-slate-100 flex flex-col relative animate-fade-in">
               <div className="flex justify-between items-start mb-4 pr-6">
-                <div>
-                  <span className="text-[9px] font-black text-indigo-400 uppercase bg-indigo-50 px-2 py-0.5 rounded-full mb-1 inline-block">{p.category}</span>
-                  <h4 className="font-bold text-slate-800 leading-tight line-clamp-2">{p.name}</h4>
+                <div className="flex gap-4 min-w-0 pr-4">
+                  {p.image ? (
+                    <img src={p.image} className="w-16 h-16 rounded-2xl object-cover shrink-0" alt={p.name} />
+                  ) : (
+                    <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 shrink-0"><i className="fas fa-image text-xl"></i></div>
+                  )}
+                  <div className="min-w-0">
+                    <span className="text-[9px] font-black text-indigo-400 uppercase bg-indigo-50 px-2 py-0.5 rounded-full mb-1 inline-block">{p.category}</span>
+                    <h4 className="font-bold text-slate-800 leading-tight line-clamp-2">{p.name}</h4>
+                  </div>
                 </div>
                 {(canEdit || canDelete) && (
                   <div className="absolute top-5 right-5 z-20">
@@ -261,40 +280,31 @@ const ProductList: React.FC<ProductListProps> = ({
         </div>
       )}
 
-      {/* Модальное окно перемещения */}
-      {showMoveModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={closeForm}>
-          <div className="bg-white p-7 rounded-t-[40px] sm:rounded-[40px] shadow-2xl w-full max-w-sm space-y-5 animate-slide-up" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-xl font-black text-slate-800">Переместить товар</h3>
-              <button onClick={closeForm} className="w-10 h-10 rounded-full bg-slate-50 text-slate-400"><i className="fas fa-times"></i></button>
-            </div>
-            <p className="text-xs text-slate-400 font-medium">Выберите папку, в которую хотите переместить товар <span className="text-slate-800 font-bold">"{showMoveModal.name}"</span></p>
-            <div className="max-h-60 overflow-y-auto space-y-2 no-scrollbar">
-              {categories.map(cat => (
-                <button
-                  key={cat}
-                  disabled={cat === showMoveModal.category}
-                  onClick={() => handleMoveProduct(cat)}
-                  className={`w-full p-4 rounded-2xl flex items-center justify-between border transition-all ${cat === showMoveModal.category ? 'bg-slate-50 text-slate-300 border-slate-100' : 'bg-white border-slate-100 hover:border-indigo-200 active:bg-indigo-50 text-slate-700 font-bold'}`}
-                >
-                  <span className="flex items-center gap-3">
-                    <i className={`fas fa-folder ${cat === showMoveModal.category ? 'text-slate-200' : 'text-indigo-400'}`}></i>
-                    {cat}
-                  </span>
-                  {cat === showMoveModal.category && <span className="text-[8px] font-black uppercase">Текущая</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {showForm && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[140] flex items-center justify-center p-4" onClick={closeForm}>
           <form onSubmit={handleSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-md space-y-5 animate-fade-in max-h-[90vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
             <h3 className="text-2xl font-black text-slate-800">{editingId ? 'Изменить товар' : 'Новый товар'}</h3>
+
             <div className="space-y-4">
+              <div className="flex flex-col items-center gap-3">
+                <label className="relative cursor-pointer group">
+                  <div className="w-32 h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[32px] flex flex-col items-center justify-center overflow-hidden transition-all group-hover:border-indigo-300">
+                    {formData.image ? (
+                      <img src={formData.image} className="w-full h-full object-cover" alt="Preview" />
+                    ) : (
+                      <>
+                        <i className="fas fa-camera text-2xl text-slate-300 mb-2"></i>
+                        <span className="text-[8px] font-black text-slate-400 uppercase">Загрузить фото</span>
+                      </>
+                    )}
+                  </div>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                  {formData.image && (
+                    <button type="button" onClick={(e) => { e.preventDefault(); setFormData({ ...formData, image: undefined }); }} className="absolute -top-2 -right-2 w-8 h-8 bg-white text-red-500 rounded-full shadow-lg flex items-center justify-center border border-slate-100"><i className="fas fa-times"></i></button>
+                  )}
+                </label>
+              </div>
+
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Название товара</label>
                 <input required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-medium" placeholder="Напр: Футболка" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
@@ -308,8 +318,13 @@ const ProductList: React.FC<ProductListProps> = ({
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ед. изм.</label>
-                  <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" value={formData.unit} onChange={e => setFormData({...formData, unit: formData.unit as any || 'шт'})}>
-                    <option value="шт">шт</option><option value="кг">кг</option><option value="упак">упак</option><option value="л">л</option>
+                  <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value as any})}>
+                    <option value="шт">шт</option>
+                    <option value="кг">кг</option>
+                    <option value="упак">упак</option>
+                    <option value="ящик">ящик</option>
+                    <option value="л">л</option>
+                    <option value="мл">мл</option>
                   </select>
                 </div>
               </div>
@@ -365,7 +380,7 @@ const ProductList: React.FC<ProductListProps> = ({
 
       {showCatForm && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[140] flex items-center justify-center p-4" onClick={closeForm}>
-          <form onSubmit={handleCatSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-w-sm space-y-5 animate-fade-in" onClick={e => e.stopPropagation()}>
+          <form onSubmit={handleCatSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-sm space-y-5 animate-fade-in" onClick={e => e.stopPropagation()}>
             <h3 className="text-2xl font-black text-slate-800">{editingCat ? 'Изменить папку' : 'Новая папка'}</h3>
             <input required autoFocus className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" placeholder="Название папки..." value={newCatName} onChange={e => setNewCatName(e.target.value)} />
             <div className="flex gap-3">

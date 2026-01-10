@@ -75,7 +75,6 @@ const App: React.FC = () => {
     setIsAuthenticated(true);
     localStorage.setItem('currentUser', JSON.stringify(sessionUser));
 
-    // Клиентов сразу в личный кабинет
     if (sessionUser.role === 'client') {
       setView('CLIENT_PORTAL');
     } else {
@@ -273,16 +272,19 @@ const App: React.FC = () => {
     }
   };
 
+  const handleUpdateOrder = (ord: Order) => {
+    setOrders(orders.map(o => o.id === ord.id ? ord : o));
+  };
+
   const renderView = () => {
     if (!currentUser) return null;
 
-    // Если клиент
     if (isClient) {
       if (view === 'PROFILE') {
         const clientData = customers.find(c => c.id === currentUser.id);
         return <Profile user={{id: currentUser.id, name: currentUser.name, role: 'client', login: currentUser.email, password: '', salary: 0, revenuePercent: 0, profitPercent: 0, permissions: {}, debt: clientData?.debt || 0} as any} sales={sales} onLogout={handleLogout} onUpdateProfile={handleLogin}/>;
       }
-      return <ClientPortal user={currentUser} products={products} sales={sales} orders={orders} onAddOrder={(o) => setOrders([o, ...orders])}/>;
+      return <ClientPortal user={currentUser} products={products} sales={sales} orders={orders} onAddOrder={(o) => setOrders([o, ...orders])} onUpdateOrder={handleUpdateOrder}/>;
     }
 
     switch (view) {
@@ -292,7 +294,7 @@ const App: React.FC = () => {
       case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} currentUserId={currentUser.id} onSale={handleSale}/>;
       case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={handleCashEntry}/>;
       case 'REPORTS': return <Reports sales={sales} products={products} transactions={transactions}/>;
-      case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={(ord) => setOrders(orders.map(o => o.id === ord.id ? ord : o))} onConfirmOrder={(ord) => { setOrders(orders.map(o => o.id === ord.id ? {...o, status: 'CONFIRMED'} : o)); handleSale({ id: `ORD-${ord.id}`, employeeId: currentUser.id, items: ord.items.map(i => ({...i, cost: products.find(p => p.id === i.productId)?.cost || 0})), total: ord.total, paymentMethod: 'DEBT', date: new Date().toISOString(), customerId: ord.customerId }); }}/>;
+      case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={handleUpdateOrder} onConfirmOrder={(ord) => { setOrders(orders.map(o => o.id === ord.id ? {...o, status: 'CONFIRMED'} : o)); handleSale({ id: `ORD-${ord.id}`, employeeId: currentUser.id, items: ord.items.map(i => ({...i, cost: products.find(p => p.id === i.productId)?.cost || 0})), total: ord.total, paymentMethod: 'DEBT', date: new Date().toISOString(), customerId: ord.customerId }); }}/>;
       case 'ALL_OPERATIONS': return <AllOperations sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees} onUpdateTransaction={t => setTransactions(transactions.map(x => x.id === t.id ? t : x))} onDeleteTransaction={deleteTransaction} onDeleteSale={deleteSale} onDeleteCashEntry={id => setCashEntries(cashEntries.filter(c => c.id !== id))} ownerId={currentUser.ownerId || currentUser.id} ownerName={currentUser.name} canDelete={canDeleteOps}/>;
       case 'STOCK_REPORT': return <StockReport products={products}/>;
       case 'PRICE_LIST': return <PriceList products={products} showCost={canShowCost}/>;
