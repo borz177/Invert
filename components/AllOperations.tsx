@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { Sale, Transaction, CashEntry, Product, Employee } from '../types';
+import { Sale, Transaction, CashEntry, Product, Employee, Customer, AppSettings } from '../types';
 
 interface AllOperationsProps {
   sales: Sale[];
@@ -8,6 +8,8 @@ interface AllOperationsProps {
   cashEntries: CashEntry[];
   products: Product[];
   employees: Employee[];
+  customers: Customer[];
+  settings?: AppSettings;
   onUpdateTransaction: (t: Transaction) => void;
   onDeleteTransaction: (id: string) => void;
   onDeleteSale: (id: string) => void;
@@ -18,7 +20,7 @@ interface AllOperationsProps {
 }
 
 const AllOperations: React.FC<AllOperationsProps> = ({
-  sales, transactions, cashEntries, products, employees,
+  sales, transactions, cashEntries, products, employees, customers, settings,
   onUpdateTransaction, onDeleteTransaction, onDeleteSale, onDeleteCashEntry,
   ownerId, ownerName, canDelete = false
 }) => {
@@ -26,6 +28,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string, type: 'SALE' | 'STOCK' | 'CASH' } | null>(null);
+  const [printingSale, setPrintingSale] = useState<any | null>(null);
 
   const getEmployeeName = (id: string) => {
     if (!id) return '---';
@@ -52,7 +55,8 @@ const AllOperations: React.FC<AllOperationsProps> = ({
         icon: 'fa-shopping-cart',
         color: s.paymentMethod === 'DEBT' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600',
         isDeleted: s.isDeleted,
-        responsible: getEmployeeName(s.employeeId)
+        responsible: getEmployeeName(s.employeeId),
+        raw: s
       }));
     }
 
@@ -123,14 +127,35 @@ const AllOperations: React.FC<AllOperationsProps> = ({
     { id: 'CASH', label: 'Касса', icon: 'fa-cash-register' },
   ];
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
     <div className="space-y-6 pb-20" onClick={() => setActiveMenuId(null)}>
-      <div className="flex justify-between items-center px-1">
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #invoice-print-area, #invoice-print-area * { visibility: visible; }
+          #invoice-print-area { 
+            position: absolute; 
+            left: 0; 
+            top: 0; 
+            width: 100%; 
+            padding: 20px;
+            color: black;
+            background: white;
+          }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+
+      <div className="flex justify-between items-center px-1 no-print">
         <h2 className="text-2xl font-black text-slate-800">История операций</h2>
         <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{operations.length}</div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 no-print">
         {filterButtons.map(f => (
           <button
             key={f.id}
@@ -143,7 +168,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
         ))}
       </div>
 
-      <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 divide-y divide-slate-50">
+      <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 divide-y divide-slate-50 no-print">
         {operations.map((op, index) => (
           <div
             key={`${op.type}-${op.id}`}
@@ -177,7 +202,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
                 </p>
               </div>
 
-              {!op.isDeleted && canDelete ? (
+              {!op.isDeleted ? (
                 <div className="relative">
                   <button
                     onClick={(e) => {
@@ -190,27 +215,34 @@ const AllOperations: React.FC<AllOperationsProps> = ({
                   </button>
                   {activeMenuId === `${op.type}-${op.id}` && (
                     <div className="absolute top-11 right-0 bg-white rounded-2xl shadow-2xl border border-slate-100 py-2 w-48 animate-fade-in z-[100]">
-                      {op.type === 'STOCK' && (
+                      {op.type === 'SALE' && (
+                        <button onClick={(e) => { e.stopPropagation(); setPrintingSale(op.raw); setActiveMenuId(null); }} className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3">
+                          <i className="fas fa-print text-indigo-400 text-[10px] w-4 text-center"></i> Накладная (Печать)
+                        </button>
+                      )}
+                      {op.type === 'STOCK' && canDelete && (
                         <button onClick={(e) => { e.stopPropagation(); setEditingTransaction(op.raw); }} className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3">
                           <i className="fas fa-pen text-indigo-400 text-[10px] w-4 text-center"></i> Изменить
                         </button>
                       )}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setConfirmDelete({ id: op.id, type: op.type });
-                        }}
-                        className="w-full px-4 py-3 text-left text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-50 mt-1"
-                      >
-                        <i className={`fas ${op.type === 'STOCK' ? 'fa-undo' : 'fa-trash-alt'} text-[10px] w-4 text-center`}></i>
-                        {op.type === 'STOCK' ? 'Аннулировать' : 'Удалить'}
-                      </button>
+                      {canDelete && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDelete({ id: op.id, type: op.type });
+                          }}
+                          className="w-full px-4 py-3 text-left text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-50 mt-1"
+                        >
+                          <i className={`fas ${op.type === 'STOCK' ? 'fa-undo' : 'fa-trash-alt'} text-[10px] w-4 text-center`}></i>
+                          {op.type === 'STOCK' ? 'Аннулировать' : 'Удалить'}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
               ) : (
                 <div className="w-10 flex justify-center">
-                  {!op.isDeleted && !canDelete ? null : <span className="text-[7px] font-black text-red-400 border border-red-100 px-1 py-0.5 rounded uppercase leading-none text-center">DEL</span>}
+                  <span className="text-[7px] font-black text-red-400 border border-red-100 px-1 py-0.5 rounded uppercase leading-none text-center">DEL</span>
                 </div>
               )}
             </div>
@@ -218,8 +250,109 @@ const AllOperations: React.FC<AllOperationsProps> = ({
         ))}
       </div>
 
+      {printingSale && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-0 sm:p-4 no-print">
+          <div className="bg-white w-full max-w-2xl sm:rounded-[40px] shadow-2xl h-full sm:h-auto max-h-[95vh] flex flex-col animate-slide-up overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="text-lg font-black text-slate-800 uppercase tracking-widest">Предпросмотр накладной</h3>
+              <button onClick={() => setPrintingSale(null)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 hover:text-slate-600"><i className="fas fa-times"></i></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 sm:p-10 bg-white">
+              <div id="invoice-print-area" className="font-serif text-slate-900">
+                <div className="flex justify-between items-start mb-8 border-b-2 border-slate-900 pb-4">
+                  <div>
+                    <h1 className="text-2xl font-black mb-1">РАСХОДНАЯ НАКЛАДНАЯ</h1>
+                    <p className="text-sm font-bold">№ {printingSale.id.slice(-6)} от {new Date(printingSale.date).toLocaleDateString('ru-RU')}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-black text-lg uppercase tracking-tight">{settings?.shopName || 'МОЙ МАГАЗИН'}</p>
+                    <p className="text-[10px] text-slate-500 italic">Система учета товаров ИнвентарьПро</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-8 mb-8 text-sm">
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Поставщик:</p>
+                    <p className="font-bold underline">{settings?.shopName || 'ИнвентарьПро'}</p>
+                    <p className="text-[11px] mt-1 italic">Адрес: _________________________________</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Покупатель:</p>
+                    <p className="font-bold underline">
+                      {printingSale.customerId ?
+                        customers.find(c => c.id === printingSale.customerId)?.name || 'Неизвестный клиент' :
+                        'Розничный покупатель'}
+                    </p>
+                    {printingSale.customerId && (
+                       <p className="text-[11px] mt-1 italic">Тел: {customers.find(c => c.id === printingSale.customerId)?.phone || '__________'}</p>
+                    )}
+                  </div>
+                </div>
+
+                <table className="w-full border-collapse border border-slate-900 text-sm mb-8">
+                  <thead>
+                    <tr className="bg-slate-100">
+                      <th className="border border-slate-900 p-2 text-center w-10">№</th>
+                      <th className="border border-slate-900 p-2 text-left">Наименование товара</th>
+                      <th className="border border-slate-900 p-2 text-center w-20">Кол-во</th>
+                      <th className="border border-slate-900 p-2 text-center w-16">Ед.</th>
+                      <th className="border border-slate-900 p-2 text-right w-24">Цена</th>
+                      <th className="border border-slate-900 p-2 text-right w-32">Сумма</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {printingSale.items.map((item: any, idx: number) => {
+                      const p = products.find(prod => prod.id === item.productId);
+                      return (
+                        <tr key={idx}>
+                          <td className="border border-slate-900 p-2 text-center">{idx + 1}</td>
+                          <td className="border border-slate-900 p-2">{p?.name || 'Товар удален'}</td>
+                          <td className="border border-slate-900 p-2 text-center font-bold">{item.quantity}</td>
+                          <td className="border border-slate-900 p-2 text-center">{p?.unit || 'шт'}</td>
+                          <td className="border border-slate-900 p-2 text-right">{item.price.toLocaleString()} ₽</td>
+                          <td className="border border-slate-900 p-2 text-right font-black">{(item.price * item.quantity).toLocaleString()} ₽</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={5} className="border border-slate-900 p-2 text-right font-black uppercase text-xs">Итого к оплате:</td>
+                      <td className="border border-slate-900 p-2 text-right font-black text-lg">{printingSale.total.toLocaleString()} ₽</td>
+                    </tr>
+                  </tfoot>
+                </table>
+
+                <div className="text-sm italic mb-10">
+                  <p>Всего наименований {printingSale.items.length}, на сумму {printingSale.total.toLocaleString()} ₽</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-20 pt-10 border-t border-slate-200">
+                  <div className="text-center">
+                    <p className="border-b border-slate-900 pb-1 font-bold">{ownerName || '________________'}</p>
+                    <p className="text-[10px] uppercase font-black text-slate-400 mt-1">Отпустил (Подпись)</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="border-b border-slate-900 pb-1 font-bold">________________</p>
+                    <p className="text-[10px] uppercase font-black text-slate-400 mt-1">Получил (Подпись)</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 bg-slate-50 border-t border-slate-200 flex gap-4 no-print">
+              <button onClick={() => setPrintingSale(null)} className="flex-1 py-4 font-bold text-slate-400 uppercase text-xs">Отмена</button>
+              <button onClick={handlePrint} className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-xl shadow-indigo-200 active:scale-95 transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-xs">
+                <i className="fas fa-print"></i> Распечатать / PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmDelete && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 no-print" onClick={(e) => e.stopPropagation()}>
           <div className="bg-white p-8 rounded-[40px] shadow-2xl w-full max-w-sm text-center space-y-6 animate-slide-up">
             <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mx-auto text-3xl ${confirmDelete.type === 'STOCK' ? 'bg-orange-50 text-orange-500' : 'bg-red-50 text-red-500'}`}>
               <i className={`fas ${confirmDelete.type === 'STOCK' ? 'fa-undo' : 'fa-trash-alt'}`}></i>
@@ -241,7 +374,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
       )}
 
       {editingTransaction && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[150] flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[150] flex items-center justify-center p-4 no-print" onClick={(e) => e.stopPropagation()}>
           <div className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-w-sm space-y-5 animate-fade-in">
             <h3 className="text-xl font-black text-slate-800 text-center">Редактирование прихода</h3>
             <form onSubmit={handleEditSubmit} className="space-y-4">
