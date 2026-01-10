@@ -50,49 +50,53 @@ const App: React.FC = () => {
   const isDataLoaded = useRef(false);
 
   const fetchAllData = async (silent = false) => {
-    if (!isAuthenticated) {
-      setIsLoading(false);
-      return;
+  if (!isAuthenticated) {
+    setIsLoading(false);
+    return;
+  }
+  if (!silent) setIsLoading(true);
+  setSyncStatus('SYNCING');
+
+  try {
+    const [p, t, s, c, sup, cust, emp, cats, sett, cart, batch] = await Promise.all([
+      db.getData('products'),
+      db.getData('transactions'),
+      db.getData('sales'),
+      db.getData('cashEntries'),
+      db.getData('suppliers'),
+      db.getData('customers'),
+      db.getData('employees'),
+      db.getData('categories'),
+      db.getData('settings'),
+      db.getData('posCart'),
+      db.getData('warehouseBatch')
+    ]);
+
+    // Безопасная установка состояния
+    if (Array.isArray(p)) setProducts(p);
+    if (Array.isArray(t)) setTransactions(t);
+    if (Array.isArray(s)) setSales(s);
+    if (Array.isArray(c)) setCashEntries(c);
+    if (Array.isArray(sup)) setSuppliers(sup);
+    if (Array.isArray(cust)) setCustomers(cust);
+    if (Array.isArray(emp)) setEmployees(emp);
+    if (Array.isArray(cats) && cats.length) setCategories(cats);
+    if (Array.isArray(cart)) setPosCart(cart);
+    if (Array.isArray(batch)) setWarehouseBatch(batch);
+
+    if (sett && typeof sett === 'object' && sett.shopName) {
+      setSettings(sett as AppSettings);
     }
-    if (!silent) setIsLoading(true);
-    setSyncStatus('SYNCING');
 
-    try {
-      const [p, t, s, c, sup, cust, emp, cats, sett, cart, batch] = await Promise.all([
-        db.getData('products'),
-        db.getData('transactions'),
-        db.getData('sales'),
-        db.getData('cashEntries'),
-        db.getData('suppliers'),
-        db.getData('customers'),
-        db.getData('employees'),
-        db.getData('categories'),
-        db.getData('settings'),
-        db.getData('posCart'),
-        db.getData('warehouseBatch')
-      ]);
-
-      if (p !== null) setProducts(p);
-      if (t !== null) setTransactions(t);
-      if (s !== null) setSales(s);
-      if (c !== null) setCashEntries(c);
-      if (sup !== null) setSuppliers(sup);
-      if (cust !== null) setCustomers(cust);
-      if (emp !== null) setEmployees(emp);
-      if (cats && cats.length) setCategories(cats);
-      if (sett && sett.shopName) setSettings(sett);
-      if (cart !== null) setPosCart(cart);
-      if (batch !== null) setWarehouseBatch(batch);
-
-      isDataLoaded.current = true;
-      setSyncStatus('IDLE');
-    } catch (e) {
-      console.error('Fetch all data error:', e);
-      setSyncStatus('ERROR');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    isDataLoaded.current = true;
+    setSyncStatus('IDLE');
+  } catch (e) {
+    console.error('Fetch all data error:', e);
+    setSyncStatus('ERROR');
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   useEffect(() => {
     const userJson = localStorage.getItem('currentUser');
