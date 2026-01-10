@@ -12,11 +12,14 @@ interface AllOperationsProps {
   onDeleteTransaction: (id: string) => void;
   onDeleteSale: (id: string) => void;
   onDeleteCashEntry: (id: string) => void;
+  ownerId?: string;
+  ownerName?: string;
 }
 
 const AllOperations: React.FC<AllOperationsProps> = ({
   sales, transactions, cashEntries, products, employees,
-  onUpdateTransaction, onDeleteTransaction, onDeleteSale, onDeleteCashEntry
+  onUpdateTransaction, onDeleteTransaction, onDeleteSale, onDeleteCashEntry,
+  ownerId, ownerName
 }) => {
   const [filter, setFilter] = useState<'ALL' | 'SALES' | 'STOCK' | 'CASH'>('ALL');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -24,8 +27,11 @@ const AllOperations: React.FC<AllOperationsProps> = ({
   const [confirmDelete, setConfirmDelete] = useState<{ id: string, type: 'SALE' | 'STOCK' | 'CASH' } | null>(null);
 
   const getEmployeeName = (id: string) => {
-    if (id === 'admin') return 'Админ';
-    return employees.find(e => e.id === id)?.name || 'Неизвестно';
+    if (!id || id === 'admin' || id === ownerId || id === '00000000-0000-0000-0000-000000000000') {
+      return ownerName || 'Владелец';
+    }
+    const emp = employees.find(e => e.id === id);
+    return emp ? emp.name : 'Сотрудник';
   };
 
   const operations = useMemo(() => {
@@ -87,7 +93,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
     }
 
     return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [sales, transactions, cashEntries, products, employees, filter]);
+  }, [sales, transactions, cashEntries, products, employees, filter, ownerId, ownerName]);
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();

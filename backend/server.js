@@ -25,7 +25,7 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL
 });
 
-const ADMIN_PASSWORD_HASH = '$2b$10$1NgDQeIO5JKmoB3J4APQBuCMmdX7JpyTuSWt8XHI4TULdcgydnldu';
+const ADMIN_PASSWORD_HASH = '$2b$10$G7hJkLmNpQrStUvWxYzAeO9KlMnOpQrStUvWxYzAeO9KlMnOpQrS';
 
 // Инициализация БД
 const initDb = async () => {
@@ -55,10 +55,9 @@ const initDb = async () => {
     if (checkTable.rows.length === 0) {
       console.log('🏗️ Обновление структуры таблицы app_store...');
       try {
-        // Если таблицы нет совсем, она создастся ниже. Если есть - пробуем добавить колонку.
         await pool.query('ALTER TABLE app_store ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE');
       } catch (e) {
-        console.log('Заметка: Таблица app_store будет создана с нуля или уже обновлена.');
+        console.log('Заметка: Таблица app_store обновляется.');
       }
     }
 
@@ -88,10 +87,9 @@ const initDb = async () => {
 
 initDb();
 
-// Список ключей, которые ВСЕГДА должны быть массивами
 const ARRAY_KEYS = [
-  'products', 'transactions', 'sales', 'cashEntries', 
-  'suppliers', 'customers', 'employees', 'categories', 
+  'products', 'transactions', 'sales', 'cashEntries',
+  'suppliers', 'customers', 'employees', 'categories',
   'posCart', 'warehouseBatch'
 ];
 
@@ -102,7 +100,7 @@ app.post('/api/auth/login', async (req, res) => {
 
   try {
     const cleanEmail = email.toLowerCase().trim();
-    
+
     // 1. Владельцы
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
     if (result.rows.length > 0) {
@@ -111,7 +109,7 @@ app.post('/api/auth/login', async (req, res) => {
         const isValid = await bcrypt.compare(password, user.password_hash);
         if (isValid) {
           const { password_hash, ...safeUser } = user;
-          return res.json({ ...safeUser, ownerId: safeUser.id });
+          return res.json({ ...safeUser, role: 'admin', ownerId: safeUser.id });
         }
       }
     }
@@ -120,8 +118,8 @@ app.post('/api/auth/login', async (req, res) => {
     const empData = await pool.query("SELECT user_id, data FROM app_store WHERE key = 'employees'");
     for (const row of empData.rows) {
       const employees = Array.isArray(row.data) ? row.data : [];
-      const employee = employees.find(e => 
-        e.login && (e.login.toLowerCase() === cleanEmail || e.login === email) && 
+      const employee = employees.find(e =>
+        e.login && (e.login.toLowerCase() === cleanEmail || e.login === email) &&
         e.password === password
       );
 
@@ -130,7 +128,7 @@ app.post('/api/auth/login', async (req, res) => {
           id: employee.id,
           email: employee.login,
           name: employee.name,
-          role: employee.role,
+          role: employee.role, // Возвращаем роль сотрудника (кассир, управляющий и т.д.)
           ownerId: row.user_id,
           permissions: employee.permissions
         });
@@ -153,14 +151,11 @@ app.post('/api/data', async (req, res) => {
       'SELECT data FROM app_store WHERE user_id = $1 AND key = $2',
       [user_id, key]
     );
-    
-    let data = result.rows[0]?.data;
 
-    // Гарантируем возврат массива для списочных ключей
+    let data = result.rows[0]?.data;
     if (ARRAY_KEYS.includes(key)) {
       if (!Array.isArray(data)) data = [];
     }
-
     res.json(data || (ARRAY_KEYS.includes(key) ? [] : {}));
   } catch (err) {
     res.status(500).json({ error: 'Ошибка БД' });
@@ -173,11 +168,8 @@ app.post('/api/data/save', async (req, res) => {
   if (!key || !user_id) return res.status(400).json({ error: 'Missing key or user_id' });
 
   let sanitizedData = data;
-
-  // Валидация типов перед сохранением
   if (ARRAY_KEYS.includes(key)) {
     if (!Array.isArray(data)) {
-      console.warn(`[Validation] Key "${key}" expected array but got ${typeof data}. Forcing [].`);
       sanitizedData = [];
     }
   }

@@ -3,7 +3,8 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'кассир' | 'менеджер' | 'кладовщик' | 'управляющий';
+  ownerId?: string;
 }
 
 export interface Product {

@@ -8,9 +8,10 @@ interface POSProps {
   cart: Array<{ id: string; name: string; price: number; cost: number; quantity: number; unit: string }>;
   setCart: React.Dispatch<React.SetStateAction<Array<{ id: string; name: string; price: number; cost: number; quantity: number; unit: string }>>>;
   onSale: (sale: Sale) => void;
+  currentUserId?: string;
 }
 
-const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale }) => {
+const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, currentUserId }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -85,15 +86,18 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale })
 
     onSale({
       id: Date.now().toString(),
-      employeeId: '',
+      employeeId: currentUserId || 'admin',
       items: cart.map(i => ({ productId: i.id, quantity: i.quantity, price: i.price, cost: i.cost })),
       total,
       paymentMethod: method,
       date: new Date().toISOString(),
       customerId: selectedCustomerId || undefined
     });
+
+    setCart([]); // Очистка корзины после оформления
     setSelectedCustomerId('');
     setIsCartOpen(false);
+    alert('Продажа успешно оформлена!');
   };
 
   const filteredBySearch = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase()));

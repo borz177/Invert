@@ -88,12 +88,13 @@ const Employees: React.FC<EmployeesProps> = ({ employees, sales, onAdd, onUpdate
   };
 
   const calculatePerformance = (emp: Employee) => {
-    const periodSales = sales.filter(s =>
-      !s.isDeleted &&
-      s.employeeId === emp.id &&
-      s.date >= dateRange.start &&
-      s.date <= (dateRange.end + 'T23:59:59')
-    );
+    const periodSales = sales.filter(s => {
+      const saleDate = s.date.split('T')[0];
+      return !s.isDeleted &&
+             s.employeeId === emp.id &&
+             saleDate >= dateRange.start &&
+             saleDate <= dateRange.end;
+    });
 
     const totalRevenue = periodSales.reduce((acc, s) => acc + s.total, 0);
     const totalProfit = periodSales.reduce((acc, s) => {
@@ -143,13 +144,14 @@ const Employees: React.FC<EmployeesProps> = ({ employees, sales, onAdd, onUpdate
                 <button onClick={() => openEdit(e)} className="w-full px-4 py-2.5 text-left text-sm font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2">
                   <i className="fas fa-pen text-indigo-400 text-xs"></i> Изменить
                 </button>
-                <button onClick={() => onDelete(e.id)} className="w-full px-4 py-2.5 text-left text-sm font-bold text-red-500 hover:bg-red-50 flex items-center gap-2">
+                <button onClick={() => onDelete(e.id)} className="w-full px-4 py-3 text-left text-sm font-bold text-red-500 hover:bg-red-50 flex items-center gap-2">
                   <i className="fas fa-trash text-xs"></i> Удалить
                 </button>
               </div>
             )}
           </div>
         ))}
+        {employees.length === 0 && <p className="text-center py-20 text-slate-300 italic">Сотрудники не добавлены</p>}
       </div>
 
       {performanceEmp && (

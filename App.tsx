@@ -49,6 +49,8 @@ const App: React.FC = () => {
 
   const isDataLoaded = useRef(false);
 
+  const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'управляющий' || !currentUser?.ownerId;
+
   const fetchAllData = async (silent = false) => {
     if (!isAuthenticated) {
       setIsLoading(false);
@@ -72,7 +74,6 @@ const App: React.FC = () => {
         db.getData('warehouseBatch')
       ]);
 
-      // Гарантируем, что данные - это массивы
       if (Array.isArray(p)) setProducts(p);
       if (Array.isArray(t)) setTransactions(t);
       if (Array.isArray(s)) setSales(s);
@@ -89,7 +90,7 @@ const App: React.FC = () => {
       isDataLoaded.current = true;
       setSyncStatus('IDLE');
     } catch (e) {
-      console.error('Fetch all data error:', e);
+      console.error('Fetch error:', e);
       setSyncStatus('ERROR');
     } finally {
       setIsLoading(false);
@@ -115,14 +116,11 @@ const App: React.FC = () => {
     if (isAuthenticated) fetchAllData();
   }, [isAuthenticated]);
 
-  // Эффект автоматического сохранения с валидацией
   useEffect(() => {
     if (!isDataLoaded.current || isLoading || !isAuthenticated) return;
 
     const timer = setTimeout(() => {
       setSyncStatus('SYNCING');
-
-      // Карта данных для сохранения с принудительной проверкой на массив
       const syncMap = [
         { key: 'products', data: Array.isArray(products) ? products : [] },
         { key: 'transactions', data: Array.isArray(transactions) ? transactions : [] },
@@ -137,13 +135,10 @@ const App: React.FC = () => {
         { key: 'warehouseBatch', data: Array.isArray(warehouseBatch) ? warehouseBatch : [] }
       ];
 
-      Promise.all(syncMap.map(item =>
-        db.saveData(item.key, item.data)
-      )).then(results => {
+      Promise.all(syncMap.map(item => db.saveData(item.key, item.data))).then(results => {
         setSyncStatus(results.every(r => r) ? 'IDLE' : 'ERROR');
       });
     }, 2000);
-
     return () => clearTimeout(timer);
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch]);
 
@@ -169,7 +164,7 @@ const App: React.FC = () => {
       case 'PRODUCTS': return (
         <ProductList
           products={products} categories={categories}
-          canEdit={true} canCreate={true} canDelete={true} showCost={true}
+          canEdit={isAdminOrManager} canCreate={isAdminOrManager} canDelete={isAdminOrManager} showCost={isAdminOrManager}
           onAdd={p => setProducts([p, ...products])} onAddBulk={ps => setProducts([...ps, ...products])}
           onUpdate={p => setProducts(products.map(x => x.id === p.id ? p : x))}
           onDelete={id => setProducts(products.filter(x => x.id !== id))}
@@ -188,12 +183,18 @@ const App: React.FC = () => {
         <Warehouse
           products={products} suppliers={suppliers} transactions={transactions}
           batch={warehouseBatch} setBatch={setWarehouseBatch}
-          onTransaction={t => setTransactions([t, ...transactions])}
-          onTransactionsBulk={ts => setTransactions([...ts, ...transactions])}
+          onTransaction={t => setTransactions([{...t, employeeId: currentUser.id}, ...transactions])}
+          onTransactionsBulk={ts => setTransactions([...ts.map(t => ({...t, employeeId: currentUser.id})), ...transactions])}
         />
       );
-      case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} onSale={(s) => setSales([s, ...sales])} />;
-      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={(e) => setCashEntries([e, ...cashEntries])} />;
+      case 'SALES': return (
+        <POS
+          products={products} customers={customers} cart={posCart} setCart={setPosCart}
+          currentUserId={currentUser.id}
+          onSale={(s) => setSales([s, ...sales])}
+        />
+      );
+      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={(e) => setCashEntries([{...e, employeeId: currentUser.id}, ...cashEntries])} />;
       case 'REPORTS': return <Reports sales={sales} products={products} transactions={transactions} />;
       case 'ALL_OPERATIONS': return (
         <AllOperations
@@ -202,10 +203,12 @@ const App: React.FC = () => {
           onDeleteTransaction={id => setTransactions(transactions.map(t => t.id === id ? { ...t, isDeleted: true } : t))}
           onDeleteSale={id => setSales(sales.map(s => s.id === id ? { ...s, isDeleted: true } : s))}
           onDeleteCashEntry={id => setCashEntries(cashEntries.filter(c => c.id !== id))}
+          ownerId={currentUser.ownerId || currentUser.id}
+          ownerName={currentUser.name}
         />
       );
       case 'STOCK_REPORT': return <StockReport products={products} />;
-      case 'PRICE_LIST': return <PriceList products={products} showCost={true} />;
+      case 'PRICE_LIST': return <PriceList products={products} showCost={isAdminOrManager} />;
       case 'SUPPLIERS': return (
         <Suppliers
           suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products}
@@ -222,41 +225,49 @@ const App: React.FC = () => {
           onDelete={id => setCustomers(customers.filter(x => x.id !== id))}
         />
       );
-      case 'EMPLOYEES': return (
-        <Employees
-          employees={employees} sales={sales}
-          onAdd={e => setEmployees([...employees, e])}
-          onUpdate={e => setEmployees(employees.map(x => x.id === e.id ? e : x))}
-          onDelete={id => setEmployees(employees.filter(x => x.id !== id))}
-        />
-      );
-      case 'PROFILE': return <Profile user={{id: currentUser.id, name: currentUser.name, role: 'управляющий', login: currentUser.email, password: '', salary: 0, revenuePercent: 0, profitPercent: 0, permissions: {canEditProduct: true, canCreateProduct: true, canDeleteProduct: true, canShowCost: true}} as Employee} sales={sales} onLogout={handleLogout} />;
+      case 'EMPLOYEES':
+        if (!isAdminOrManager) return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} />;
+        return (
+          <Employees
+            employees={employees} sales={sales}
+            onAdd={e => setEmployees([...employees, e])}
+            onUpdate={e => setEmployees(employees.map(x => x.id === e.id ? e : x))}
+            onDelete={id => setEmployees(employees.filter(x => x.id !== id))}
+          />
+        );
+      case 'PROFILE': return <Profile user={{id: currentUser.id, name: currentUser.name, role: currentUser.role as any, login: currentUser.email, password: '', salary: 0, revenuePercent: 0, profitPercent: 0, permissions: {canEditProduct: true, canCreateProduct: true, canDeleteProduct: true, canShowCost: true}} as Employee} sales={sales} onLogout={handleLogout} />;
       case 'SETTINGS': return <Settings settings={settings} onUpdate={setSettings} onClear={() => {}} />;
       case 'MORE_MENU': return (
         <div className="space-y-4 animate-fade-in pb-10">
           <h2 className="text-2xl font-black text-slate-800 px-2 mb-6">Еще</h2>
           <button onClick={() => setView('PROFILE')} className="w-full bg-white p-6 rounded-[32px] shadow-sm flex items-center gap-4 border border-slate-100">
             <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl"><i className="fas fa-user-circle"></i></div>
-            <div className="text-left"><p className="font-black text-slate-800">Профиль</p><p className="text-xs text-slate-400 font-bold uppercase">{currentUser.role}</p></div>
+            <div className="text-left"><p className="font-black text-slate-800">Профиль</p><p className="text-xs text-slate-400 font-bold uppercase">{currentUser.role || (currentUser.ownerId ? 'Сотрудник' : 'Владелец')}</p></div>
           </button>
 
           <div className="grid grid-cols-1 gap-3">
-            <button onClick={() => setView('SUPPLIERS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
-              <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center"><i className="fas fa-truck-field"></i></div>
-              <span className="font-bold text-slate-700">Поставщики</span>
-            </button>
+            {isAdminOrManager && (
+              <button onClick={() => setView('SUPPLIERS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
+                <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center"><i className="fas fa-truck-field"></i></div>
+                <span className="font-bold text-slate-700">Поставщики</span>
+              </button>
+            )}
             <button onClick={() => setView('CLIENTS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
               <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i className="fas fa-users"></i></div>
               <span className="font-bold text-slate-700">Клиенты</span>
             </button>
-            <button onClick={() => setView('EMPLOYEES')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
-              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i className="fas fa-user-tie"></i></div>
-              <span className="font-bold text-slate-700">Сотрудники</span>
-            </button>
-            <button onClick={() => setView('SETTINGS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
-              <div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-2xl flex items-center justify-center"><i className="fas fa-cog"></i></div>
-              <span className="font-bold text-slate-700">Настройки</span>
-            </button>
+            {isAdminOrManager && (
+              <button onClick={() => setView('EMPLOYEES')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
+                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i className="fas fa-user-tie"></i></div>
+                <span className="font-bold text-slate-700">Сотрудники</span>
+              </button>
+            )}
+            {isAdminOrManager && (
+              <button onClick={() => setView('SETTINGS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
+                <div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-2xl flex items-center justify-center"><i className="fas fa-cog"></i></div>
+                <span className="font-bold text-slate-700">Настройки</span>
+              </button>
+            )}
           </div>
         </div>
       );
