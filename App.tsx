@@ -55,9 +55,15 @@ const App: React.FC = () => {
     (currentUser && currentUser.id === currentUser.ownerId);
 
   const handleLogin = (user: User) => {
-    setCurrentUser(user);
+    // Гарантируем наличие ownerId для администратора
+    const sessionUser = { ...user };
+    if (sessionUser.role === 'admin' && !sessionUser.ownerId) {
+      sessionUser.ownerId = sessionUser.id;
+    }
+
+    setCurrentUser(sessionUser);
     setIsAuthenticated(true);
-    localStorage.setItem('currentUser', JSON.stringify(user));
+    localStorage.setItem('currentUser', JSON.stringify(sessionUser));
   };
 
   const handleLogout = () => {
@@ -210,7 +216,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Fixed handleAddCashEntrySimple parameter type to include an optional 'id' property, resolving the error on line 217
   const handleAddCashEntrySimple = (entry: Omit<CashEntry, 'id' | 'date' | 'employeeId'> & { id?: string }) => {
     if (!currentUser) return;
     const fullEntry: CashEntry = {
@@ -240,10 +245,7 @@ const App: React.FC = () => {
     const t = transactions.find(x => x.id === id);
     if (!t || t.isDeleted) return;
     setTransactions(transactions.map(x => x.id === id ? { ...x, isDeleted: true } : x));
-
-    // Удаляем связанные записи в кассе (например, оплату закупа)
     setCashEntries(prev => prev.filter(e => e.id !== `trans-receipt-${id}`));
-
     setProducts(prev => prev.map(p => p.id === t.productId ? { ...p, quantity: p.quantity + (t.type === 'IN' ? -t.quantity : t.quantity) } : p));
     if (t.type === 'IN' && t.paymentMethod === 'DEBT' && t.supplierId) {
       updateSupplierDebt(t.supplierId, -(t.quantity * (t.pricePerUnit || 0)));
@@ -272,7 +274,7 @@ const App: React.FC = () => {
           <h2 className="text-2xl font-black text-slate-800 px-2 mb-6">Еще</h2>
           <button onClick={() => setView('PROFILE')} className="w-full bg-white p-6 rounded-[32px] shadow-sm flex items-center gap-4 border border-slate-100">
             <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl"><i className="fas fa-user-circle"></i></div>
-            <div className="text-left"><p className="font-black text-slate-800">Профиль</p><p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{currentUser.id === currentUser.ownerId ? 'Владелец' : currentUser.role}</p></div>
+            <div className="text-left"><p className="font-black text-slate-800">Профиль</p><p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{currentUser.role === 'admin' || currentUser.id === currentUser.ownerId ? 'Владелец' : currentUser.role}</p></div>
           </button>
           <div className="grid grid-cols-1 gap-3">
             <button onClick={() => setView('SUPPLIERS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center"><i className="fas fa-truck-field"></i></div><span className="font-bold text-slate-700">Поставщики</span></button>

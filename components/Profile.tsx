@@ -26,7 +26,8 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
   const [error, setError] = useState('');
 
   if (!user) return null;
-  // Fixed the role comparison on line 29 by casting user.role to string. This handles cases where the user object might be an admin/owner.
+
+  // Более надежное определение владельца
   const isOwner = (user.role as string) === 'admin' || (user as any).ownerId === user.id;
   const totalAmount = sales.filter(s => !s.isDeleted).reduce((acc, s) => acc + s.total, 0);
 
@@ -88,7 +89,9 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
         ) : (
           <>
             <h2 className="text-2xl font-black text-slate-800">{user.name}</h2>
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{(user as any).role === 'admin' ? 'Владелец' : user.role}</p>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+              {isOwner ? 'Владелец' : user.role}
+            </p>
           </>
         )}
       </div>

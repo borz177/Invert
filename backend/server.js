@@ -105,7 +105,13 @@ app.post('/api/auth/update-profile', async (req, res) => {
       [name || user.name, newHash, userId]
     );
 
-    res.json(updated.rows[0]);
+    const resultUser = updated.rows[0];
+    // Важно: возвращаем ownerId для админа
+    if (resultUser.role === 'admin') {
+      resultUser.ownerId = resultUser.id;
+    }
+
+    res.json(resultUser);
   } catch (err) {
     res.status(500).json({ error: 'Ошибка при обновлении профиля' });
   }
