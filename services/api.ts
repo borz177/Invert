@@ -1,4 +1,3 @@
-
 import { Product, Transaction, Sale, CashEntry, Supplier, Customer, Employee, User } from '../types';
 
 const getApiUrl = () => {
@@ -55,7 +54,7 @@ export const db = {
     const userJson = localStorage.getItem('currentUser');
     if (!userJson) return null;
     const user: User & { ownerId?: string } = JSON.parse(userJson);
-    const targetUserId = user.ownerId || user.id;
+    const targetOwnerId = user.ownerId || user.id; // ← лучше называть ownerId
 
     try {
       const response = await fetchWithTimeout(`${API_BASE}/data`, {
@@ -64,14 +63,14 @@ export const db = {
           'Content-Type': 'application/json',
           'Accept': 'application/json' 
         },
-        body: JSON.stringify({ key, user_id: targetUserId })
+        body: JSON.stringify({ key, ownerId: targetOwnerId }) // ← ИСПРАВЛЕНО
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      localStorage.setItem(`cache_${targetUserId}_${key}`, JSON.stringify(data));
+      localStorage.setItem(`cache_${targetOwnerId}_${key}`, JSON.stringify(data));
       return data;
     } catch (e) {
-      const local = localStorage.getItem(`cache_${targetUserId}_${key}`);
+      const local = localStorage.getItem(`cache_${targetOwnerId}_${key}`);
       return local ? JSON.parse(local) : null;
     }
   },
@@ -80,15 +79,15 @@ export const db = {
     const userJson = localStorage.getItem('currentUser');
     if (!userJson) return false;
     const user: User & { ownerId?: string } = JSON.parse(userJson);
-    const targetUserId = user.ownerId || user.id;
+    const targetOwnerId = user.ownerId || user.id;
 
-    localStorage.setItem(`cache_${targetUserId}_${key}`, JSON.stringify(data));
+    localStorage.setItem(`cache_${targetOwnerId}_${key}`, JSON.stringify(data));
 
     try {
       const response = await fetchWithTimeout(`${API_BASE}/data/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, data, user_id: targetUserId })
+        body: JSON.stringify({ key, data, ownerId: targetOwnerId }) // ← ИСПРАВЛЕНО
       });
       return response.ok;
     } catch (e) {
