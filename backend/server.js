@@ -109,6 +109,7 @@ app.post('/api/auth/login', async (req, res) => {
         const isValid = await bcrypt.compare(password, user.password_hash);
         if (isValid) {
           const { password_hash, ...safeUser } = user;
+          // Владелец всегда получает роль admin для доступа ко всему
           return res.json({ ...safeUser, role: 'admin', ownerId: safeUser.id });
         }
       }
@@ -128,7 +129,7 @@ app.post('/api/auth/login', async (req, res) => {
           id: employee.id,
           email: employee.login,
           name: employee.name,
-          role: employee.role, // Возвращаем роль сотрудника (кассир, управляющий и т.д.)
+          role: employee.role,
           ownerId: row.user_id,
           permissions: employee.permissions
         });
@@ -193,11 +194,12 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      'INSERT INTO users (email, password_hash, name) VALUES ($1, $2, $3) RETURNING id, email, name, role',
-      [email.toLowerCase().trim(), hashedPassword, name]
+      'INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, name, role',
+      [email.toLowerCase().trim(), hashedPassword, name, 'admin']
     );
     const user = result.rows[0];
-    res.status(201).json({ ...user, ownerId: user.id });
+    // При регистрации возвращаем role: admin и ownerId = id, чтобы пользователь сразу стал владельцем
+    res.status(201).json({ ...user, role: 'admin', ownerId: user.id });
   } catch (err) {
     res.status(err.code === '23505' ? 409 : 500).json({ error: 'Ошибка регистрации' });
   }

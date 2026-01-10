@@ -49,7 +49,11 @@ const App: React.FC = () => {
 
   const isDataLoaded = useRef(false);
 
-  const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'управляющий' || !currentUser?.ownerId;
+  // Права: Владелец (id === ownerId), Админ или Управляющий
+  const isAdminOrManager =
+    currentUser?.role === 'admin' ||
+    currentUser?.role === 'управляющий' ||
+    (currentUser && currentUser.id === currentUser.ownerId);
 
   const fetchAllData = async (silent = false) => {
     if (!isAuthenticated) {
@@ -263,7 +267,7 @@ const App: React.FC = () => {
           <h2 className="text-2xl font-black text-slate-800 px-2 mb-6">Еще</h2>
           <button onClick={() => setView('PROFILE')} className="w-full bg-white p-6 rounded-[32px] shadow-sm flex items-center gap-4 border border-slate-100">
             <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl"><i className="fas fa-user-circle"></i></div>
-            <div className="text-left"><p className="font-black text-slate-800">Профиль</p><p className="text-xs text-slate-400 font-bold uppercase">{currentUser.role || (currentUser.ownerId ? 'Сотрудник' : 'Владелец')}</p></div>
+            <div className="text-left"><p className="font-black text-slate-800">Профиль</p><p className="text-xs text-slate-400 font-bold uppercase">{currentUser.id === currentUser.ownerId ? 'Владелец' : currentUser.role}</p></div>
           </button>
 
           <div className="grid grid-cols-1 gap-3">
