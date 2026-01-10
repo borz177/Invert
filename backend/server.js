@@ -113,6 +113,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // Получение данных
+// Получение данных
 app.post('/api/data', async (req, res) => {
   console.log('📥 GET DATA — RAW:', req.body);
   const { key, user_id } = req.body;
@@ -123,8 +124,9 @@ app.post('/api/data', async (req, res) => {
 
   try {
     console.log('🔍 Запрос к БД:', { user_id, key });
+    // ИСПРАВЛЕНО: owner_id → user_id
     const result = await pool.query(
-      'SELECT data FROM app_store WHERE owner_id = $1 AND key = $2',
+      'SELECT data FROM app_store WHERE user_id = $1 AND key = $2',
       [user_id, key]
     );
     console.log('✅ Получено данных:', result.rows.length);
@@ -135,6 +137,7 @@ app.post('/api/data', async (req, res) => {
   }
 });
 
+// Сохранение данных
 app.post('/api/data/save', async (req, res) => {
   console.log('📥 SAVE DATA — RAW:', req.body);
   const { key, data, user_id } = req.body;
@@ -172,6 +175,7 @@ app.post('/api/data/save', async (req, res) => {
     }
 
     console.log('📤 Сохранение данных...');
+    // ИСПРАВЛЕНО: используем user_id в INSERT
     await pool.query(
       `INSERT INTO app_store (user_id, key, data) 
        VALUES ($1, $2, $3::jsonb)
