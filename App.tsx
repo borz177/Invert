@@ -278,7 +278,10 @@ const App: React.FC = () => {
 
     // Если клиент
     if (isClient) {
-      if (view === 'PROFILE') return <Profile user={{id: currentUser.id, name: currentUser.name, role: 'client', login: currentUser.email, password: '', salary: 0, revenuePercent: 0, profitPercent: 0, permissions: {}} as any} sales={sales} onLogout={handleLogout} onUpdateProfile={handleLogin}/>;
+      if (view === 'PROFILE') {
+        const clientData = customers.find(c => c.id === currentUser.id);
+        return <Profile user={{id: currentUser.id, name: currentUser.name, role: 'client', login: currentUser.email, password: '', salary: 0, revenuePercent: 0, profitPercent: 0, permissions: {}, debt: clientData?.debt || 0} as any} sales={sales} onLogout={handleLogout} onUpdateProfile={handleLogin}/>;
+      }
       return <ClientPortal user={currentUser} products={products} sales={sales} orders={orders} onAddOrder={(o) => setOrders([o, ...orders])}/>;
     }
 

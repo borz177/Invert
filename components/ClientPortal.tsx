@@ -15,6 +15,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, products, sales, orde
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<any[]>([]);
   const [isOrdering, setIsOrdering] = useState(false);
+  const [selectedDetail, setSelectedDetail] = useState<{ type: 'INVOICE' | 'ORDER', item: any } | null>(null);
 
   // История покупок именно этого клиента
   const mySales = useMemo(() => {
@@ -62,6 +63,9 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, products, sales, orde
     setIsOrdering(false);
     alert('Ваш заказ успешно отправлен! Ожидайте подтверждения менеджером.');
   };
+
+  const getProductName = (id: string) => products.find(p => p.id === id)?.name || 'Товар удален';
+  const getProductUnit = (id: string) => products.find(p => p.id === id)?.unit || 'шт';
 
   return (
     <div className="space-y-6 pb-24">
@@ -175,7 +179,11 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, products, sales, orde
           <div className="space-y-3">
             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Текущие заказы</h4>
             {myOrders.map(o => (
-              <div key={o.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center">
+              <div
+                key={o.id}
+                onClick={() => setSelectedDetail({ type: 'ORDER', item: o })}
+                className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center active:scale-95 transition-transform"
+              >
                 <div className="flex items-center gap-4">
                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl ${o.status === 'NEW' ? 'bg-indigo-50 text-indigo-500' : o.status === 'CONFIRMED' ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'}`}>
                     <i className={`fas ${o.status === 'NEW' ? 'fa-hourglass-half' : o.status === 'CONFIRMED' ? 'fa-check-double' : 'fa-times'}`}></i>
@@ -190,6 +198,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, products, sales, orde
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-black text-slate-800">{o.total.toLocaleString()} ₽</p>
+                  <i className="fas fa-chevron-right text-[10px] text-slate-300"></i>
                 </div>
               </div>
             ))}
@@ -197,20 +206,62 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, products, sales, orde
           </div>
 
           <div className="space-y-3">
-            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">История покупок (чеки)</h4>
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Мои накладные</h4>
             {mySales.map(s => (
-              <div key={s.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center">
+              <div
+                key={s.id}
+                onClick={() => setSelectedDetail({ type: 'INVOICE', item: s })}
+                className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center active:scale-95 transition-transform"
+              >
                 <div>
-                  <p className="font-bold text-slate-800 text-sm">Чек №{s.id.slice(-4)}</p>
+                  <p className="font-bold text-slate-800 text-sm">Накладная №{s.id.slice(-4)}</p>
                   <p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(s.date).toLocaleDateString()} {new Date(s.date).toLocaleTimeString()}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-lg font-black text-emerald-600">{s.total.toLocaleString()} ₽</p>
-                  <span className="text-[8px] font-black text-slate-300 uppercase">{s.paymentMethod === 'CASH' ? 'Наличными' : s.paymentMethod === 'CARD' ? 'Карта' : 'В долг'}</span>
+                  <span className="text-[8px] font-black text-slate-300 uppercase block">{s.paymentMethod === 'CASH' ? 'Наличными' : s.paymentMethod === 'CARD' ? 'Карта' : 'В долг'}</span>
                 </div>
               </div>
             ))}
-            {mySales.length === 0 && <p className="text-center py-10 text-slate-300 italic text-sm">История покупок пуста</p>}
+            {mySales.length === 0 && <p className="text-center py-10 text-slate-300 italic text-sm">История накладных пуста</p>}
+          </div>
+        </div>
+      )}
+
+      {selectedDetail && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-end justify-center">
+          <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-6 max-h-[90vh] flex flex-col animate-slide-up" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-xl font-black text-slate-800">
+                  {selectedDetail.type === 'INVOICE' ? 'Накладная' : 'Заказ'} №{selectedDetail.item.id.slice(-4)}
+                </h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                  Детализация товаров
+                </p>
+              </div>
+              <button onClick={() => setSelectedDetail(null)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times"></i></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar pb-6">
+              {selectedDetail.item.items.map((it: any, idx: number) => (
+                <div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div>
+                    <p className="font-bold text-slate-800 text-sm">{getProductName(it.productId)}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">{it.quantity} {getProductUnit(it.productId)} x {it.price.toLocaleString()} ₽</p>
+                  </div>
+                  <p className="font-black text-slate-800">{(it.quantity * it.price).toLocaleString()} ₽</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex justify-between items-center">
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Итого</span>
+                <p className="text-3xl font-black text-slate-800">{selectedDetail.item.total.toLocaleString()} ₽</p>
+              </div>
+              <button onClick={() => setSelectedDetail(null)} className="bg-slate-800 text-white px-8 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest">Закрыть</button>
+            </div>
           </div>
         </div>
       )}

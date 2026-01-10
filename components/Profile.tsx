@@ -27,9 +27,16 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
 
   if (!user) return null;
 
-  // Более надежное определение владельца
+  // Use string casting to allow comparison with 'client' role, which is not in the Employee role union
+  const isClient = (user.role as string) === 'client';
   const isOwner = (user.role as string) === 'admin' || (user as any).ownerId === user.id;
-  const totalAmount = sales.filter(s => !s.isDeleted).reduce((acc, s) => acc + s.total, 0);
+
+  const today = new Date().toISOString().split('T')[0];
+  const purchasesTodayCount = sales.filter(s => s.customerId === user.id && s.date.startsWith(today) && !s.isDeleted).length;
+  const totalAmountSales = sales.filter(s => !s.isDeleted).reduce((acc, s) => acc + s.total, 0);
+
+  // Долг для клиента (передается через объект user как доп. поле)
+  const clientDebt = (user as any).debt || 0;
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +61,7 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
         <button onClick={onLogout} className="absolute top-6 right-6 w-10 h-10 bg-red-50 text-red-500 rounded-full flex items-center justify-center active:bg-red-100 transition-colors" title="Выйти">
           <i className="fas fa-sign-out-alt"></i>
         </button>
-        {isOwner && !isEditing && (
+        {(isOwner || isClient) && !isEditing && (
           <button onClick={() => setIsEditing(true)} className="absolute top-6 left-6 w-10 h-10 bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center active:bg-indigo-100 transition-colors" title="Редактировать">
             <i className="fas fa-pen text-xs"></i>
           </button>
@@ -90,7 +97,7 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
           <>
             <h2 className="text-2xl font-black text-slate-800">{user.name}</h2>
             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-              {isOwner ? 'Владелец' : user.role}
+              {isClient ? 'Клиент магазина' : (isOwner ? 'Владелец' : user.role)}
             </p>
           </>
         )}
@@ -98,28 +105,32 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
 
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-emerald-50 p-6 rounded-[32px] border border-emerald-100 shadow-sm">
-          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Продаж сегодня</p>
-          <p className="text-2xl font-black text-emerald-700">{sales.filter(s => !s.isDeleted).length}</p>
+          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">{isClient ? 'Закупок сегодня' : 'Продаж сегодня'}</p>
+          <p className="text-2xl font-black text-emerald-700">{isClient ? purchasesTodayCount : sales.filter(s => s.date.startsWith(today) && !s.isDeleted).length}</p>
         </div>
         <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 shadow-sm">
-          <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">Ваша выручка</p>
-          <p className="text-2xl font-black text-indigo-700">{totalAmount.toLocaleString()} ₽</p>
+          <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">{isClient ? 'Ваш долг' : 'Ваша выручка'}</p>
+          <p className={`text-2xl font-black ${isClient && clientDebt > 0 ? 'text-red-600' : 'text-indigo-700'}`}>
+            {(isClient ? clientDebt : totalAmountSales).toLocaleString()} ₽
+          </p>
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
-        <h3 className="font-black text-slate-800 text-sm mb-4 uppercase tracking-widest text-center">Ваши права доступа</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {user.permissions ? Object.entries(user.permissions).map(([key, value]) => (
-            <div key={key} className={`p-4 rounded-2xl flex items-center justify-between gap-3 ${value ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-300 border border-red-50 opacity-60'}`}>
-              <span className="text-[11px] font-bold uppercase tracking-tight">{PERMISSION_LABELS[key] || key}</span>
-              <i className={`fas ${value ? 'fa-check-circle' : 'fa-times-circle'} text-sm`}></i>
-            </div>
-          )) : (
-            <p className="text-center w-full text-slate-400 text-xs italic py-4">Полный доступ (Владелец)</p>
-          )}
+      {!isClient && (
+        <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
+          <h3 className="font-black text-slate-800 text-sm mb-4 uppercase tracking-widest text-center">Ваши права доступа</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {user.permissions ? Object.entries(user.permissions).map(([key, value]) => (
+              <div key={key} className={`p-4 rounded-2xl flex items-center justify-between gap-3 ${value ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-300 border border-red-50 opacity-60'}`}>
+                <span className="text-[11px] font-bold uppercase tracking-tight">{PERMISSION_LABELS[key] || key}</span>
+                <i className={`fas ${value ? 'fa-check-circle' : 'fa-times-circle'} text-sm`}></i>
+              </div>
+            )) : (
+              <p className="text-center w-full text-slate-400 text-xs italic py-4">Полный доступ (Владелец)</p>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
