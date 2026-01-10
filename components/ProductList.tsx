@@ -67,6 +67,7 @@ const ProductList: React.FC<ProductListProps> = ({
     if (formData.name && formData.price !== undefined) {
       // Преобразование пустых или некорректных значений в 0
       const parseNum = (val: any) => {
+        if (val === '' || val === null || val === undefined) return 0;
         const n = parseFloat(val);
         return isNaN(n) ? 0 : n;
       };
@@ -266,12 +267,10 @@ const ProductList: React.FC<ProductListProps> = ({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Закуп (₽)</label>
-                  {/* Fix: Parse string value to number */}
                   <input type="number" step="0.01" inputMode="decimal" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.cost === 0 ? '' : formData.cost} onChange={e => setFormData({...formData, cost: parseFloat(e.target.value) || 0})} />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Продажа (₽)</label>
-                  {/* Fix: Parse string value to number */}
                   <input type="number" step="0.01" inputMode="decimal" required className="w-full p-4 bg-indigo-50 border border-indigo-100 rounded-2xl outline-none font-black text-indigo-600" value={formData.price === 0 ? '' : formData.price} onChange={e => setFormData({...formData, price: parseFloat(e.target.value) || 0})} />
                 </div>
               </div>
@@ -284,13 +283,12 @@ const ProductList: React.FC<ProductListProps> = ({
                     inputMode="decimal"
                     className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
                     value={formData.quantity === 0 || formData.quantity === null || formData.quantity === undefined ? '' : formData.quantity}
-                    /* Fix: Parse string value to number */
+                    // Fix: Parse input value to number to fix "string not assignable to number" error.
                     onChange={e => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Мин. порог</label>
-                  {/* Fix: Parse string value to number */}
                   <input type="number" inputMode="numeric" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.minStock === 0 ? '' : formData.minStock} onChange={e => setFormData({...formData, minStock: parseFloat(e.target.value) || 0})} />
                 </div>
               </div>
