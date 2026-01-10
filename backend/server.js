@@ -114,44 +114,44 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Получение данных
 app.post('/api/data', async (req, res) => {
-  console.log('📥 Получен запрос на чтение:', req.body); // ← ДОБАВЬТЕ ЭТО
-
+  console.log('📥 GET DATA — RAW:', req.body);
   const { key, user_id } = req.body;
-  if (!key || !user_id) return res.status(400).json({ error: 'Missing key or user_id' });
-
-  try {
-    const result = await pool.query(
-      'SELECT data FROM app_store WHERE owner_id = $1 AND key = $2',
-      [user_id, key]
-    );
-    res.json(result.rows[0]?.data || []);
-  } catch (err) {
-    console.error('💥 Ошибка получения данных:', err);
-    res.status(500).json({ error: 'Ошибка БД' });
-  }
-});
-
-// Сохранение данных
-app.post('/api/data/save', async (req, res) => {
-  console.log('📥 RAW запрос:', req.body);
-
-  const { key, data, user_id } = req.body;
-  console.log('🔍 Параметры:', { key, user_id, dataType: typeof data });
-
   if (!key || !user_id) {
-    console.error('❌ Отсутствует key или user_id');
+    console.error('❌ Missing key or user_id');
     return res.status(400).json({ error: 'Missing key or user_id' });
   }
 
   try {
-    // Проверяем существование пользователя
+    console.log('🔍 Запрос к БД:', { user_id, key });
+    const result = await pool.query(
+      'SELECT data FROM app_store WHERE owner_id = $1 AND key = $2',
+      [user_id, key]
+    );
+    console.log('✅ Получено данных:', result.rows.length);
+    res.json(result.rows[0]?.data || []);
+  } catch (err) {
+    console.error('💥 ОШИБКА ПРИ ЧТЕНИИ:', err.message);
+    res.status(500).json({ error: 'Ошибка БД' });
+  }
+});
+
+app.post('/api/data/save', async (req, res) => {
+  console.log('📥 SAVE DATA — RAW:', req.body);
+  const { key, data, user_id } = req.body;
+  if (!key || !user_id) {
+    console.error('❌ Missing key or user_id');
+    return res.status(400).json({ error: 'Missing key or user_id' });
+  }
+
+  try {
+    console.log('🔍 Проверка пользователя...');
     const userCheck = await pool.query('SELECT 1 FROM users WHERE id = $1', [user_id]);
     if (userCheck.rows.length === 0) {
       console.error('❌ Пользователь не найден:', user_id);
       return res.status(400).json({ error: 'Invalid user_id' });
     }
 
-    console.log('📤 Выполняем запрос к БД...');
+    console.log('📤 Сохранение данных...');
     await pool.query(
       `INSERT INTO app_store (user_id, key, data) 
        VALUES ($1, $2, $3::jsonb)
@@ -159,13 +159,11 @@ app.post('/api/data/save', async (req, res) => {
        DO UPDATE SET data = $3::jsonb, updated_at = NOW()`,
       [user_id, key, data]
     );
-
-    console.log('✅ Успешно сохранено для user_id:', user_id);
+    console.log('✅ Данные сохранены');
     res.sendStatus(200);
   } catch (err) {
-    console.error('💥 КРИТИЧЕСКАЯ ОШИБКА:', err.message);
-    console.error('📊 Данные запроса:', { key, user_id, dataLength: JSON.stringify(data).length });
-    res.status(500).json({ error: 'Ошибка БД: ' + err.message });
+    console.error('💥 ОШИБКА ПРИ СОХРАНЕНИИ:', err.message);
+    res.status(500).json({ error: 'Ошибка БД' });
   }
 });
 
