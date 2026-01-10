@@ -144,6 +144,26 @@ app.post('/api/data/save', async (req, res) => {
   }
 
   try {
+    // Валидация данных
+    if (typeof data === 'undefined') {
+      console.error('❌ Data is undefined');
+      return res.status(400).json({ error: 'Data is undefined' });
+    }
+
+    // Преобразование в JSON и обратно для очистки
+    let cleanData = data;
+    if (Array.isArray(data)) {
+      cleanData = data.map(item => item || {});
+    } else if (typeof data === 'object') {
+      cleanData = Object.fromEntries(
+        Object.entries(data).filter(([_, v]) => v !== undefined)
+      );
+    }
+
+    // Проверка на корректность JSON
+    const jsonString = JSON.stringify(cleanData);
+    JSON.parse(jsonString); // ← Это вызовет ошибку, если JSON некорректен
+
     console.log('🔍 Проверка пользователя...');
     const userCheck = await pool.query('SELECT 1 FROM users WHERE id = $1', [user_id]);
     if (userCheck.rows.length === 0) {
@@ -157,13 +177,13 @@ app.post('/api/data/save', async (req, res) => {
        VALUES ($1, $2, $3::jsonb)
        ON CONFLICT (user_id, key) 
        DO UPDATE SET data = $3::jsonb, updated_at = NOW()`,
-      [user_id, key, data]
+      [user_id, key, cleanData]
     );
     console.log('✅ Данные сохранены');
     res.sendStatus(200);
   } catch (err) {
     console.error('💥 ОШИБКА ПРИ СОХРАНЕНИИ:', err.message);
-    res.status(500).json({ error: 'Ошибка БД' });
+    res.status(500).json({ error: 'Ошибка БД: ' + err.message });
   }
 });
 
