@@ -1,3 +1,4 @@
+
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -7,8 +8,9 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// CORS
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://babyborz.shop'],
+  origin: ['http://localhost:5173', 'https://babyborz.shop', 'http://localhost:3000', 'http://localhost:5174'],
   credentials: true
 }));
 
@@ -18,204 +20,197 @@ app.use((req, res, next) => {
   next();
 });
 
+// Подключение к БД
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL
 });
 
-// Создаём хеш для admin123
-const ADMIN_PASSWORD_HASH = '$2b$10$1NgDQeIO5JKmoB3J4APQBuCMmdX7JpyTuSWt8XHI4TULdcgydnldu'; // ← замените на ваш хеш
+const ADMIN_PASSWORD_HASH = '$2b$10$1NgDQeIO5JKmoB3J4APQBuCMmdX7JpyTuSWt8XHI4TULdcgydnldu';
 
-// Инициализация админа
-const initAdmin = async () => {
-  const adminCheck = await pool.query('SELECT id FROM users WHERE email = $1', ['admin']);
-  if (adminCheck.rows.length === 0) {
-    await pool.query(
-      'INSERT INTO users (id, email, password_hash, name) VALUES ($1, $2, $3, $4)',
-      ['00000000-0000-0000-0000-000000000000', 'admin', ADMIN_PASSWORD_HASH, 'Суперадмин']
-    );
-    console.log('👑 Superadmin создан');
+// Инициализация БД
+const initDb = async () => {
+  try {
+    await pool.query('CREATE EXTENSION IF NOT EXISTS "pgcrypto"');
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT,
+        name TEXT NOT NULL,
+        role TEXT DEFAULT 'user',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT');
+
+    // Проверка структуры app_store
+    const checkTable = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'app_store' AND column_name = 'user_id'
+    `);
+
+    if (checkTable.rows.length === 0) {
+      console.log('🏗️ Обновление структуры таблицы app_store...');
+      try {
+        // Если таблицы нет совсем, она создастся ниже. Если есть - пробуем добавить колонку.
+        await pool.query('ALTER TABLE app_store ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE');
+      } catch (e) {
+        console.log('Заметка: Таблица app_store будет создана с нуля или уже обновлена.');
+      }
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS app_store (
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        data JSONB NOT NULL,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (user_id, key)
+      )
+    `);
+
+    const adminCheck = await pool.query('SELECT id FROM users WHERE email = $1', ['admin']);
+    if (adminCheck.rows.length === 0) {
+      await pool.query(
+        'INSERT INTO users (id, email, password_hash, name, role) VALUES ($1, $2, $3, $4, $5)',
+        ['00000000-0000-0000-0000-000000000000', 'admin', ADMIN_PASSWORD_HASH, 'Суперадмин', 'admin']
+      );
+    }
+
+    console.log('✅ БД готова');
+  } catch (err) {
+    console.error('❌ Ошибка БД:', err);
   }
 };
 
-// Регистрация владельца
-app.post('/api/auth/register', async (req, res) => {
-  const { email, password, name } = req.body;
-  if (!email || !password || !name) {
-    return res.status(400).json({ error: 'Email, пароль и имя обязательны' });
-  }
+initDb();
 
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const result = await pool.query(
-      'INSERT INTO users (email, password_hash, name) VALUES ($1, $2, $3) RETURNING id, email, name',
-      [email.toLowerCase().trim(), hashedPassword, name]
-    );
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ error: 'Пользователь уже существует' });
-    }
-    res.status(500).json({ error: 'Ошибка регистрации' });
-  }
-});
+// Список ключей, которые ВСЕГДА должны быть массивами
+const ARRAY_KEYS = [
+  'products', 'transactions', 'sales', 'cashEntries', 
+  'suppliers', 'customers', 'employees', 'categories', 
+  'posCart', 'warehouseBatch'
+];
 
 // Вход
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email и пароль обязательны' });
-  }
+  if (!email || !password) return res.status(400).json({ error: 'Email и пароль обязательны' });
 
   try {
     const cleanEmail = email.toLowerCase().trim();
-
-    // Сначала проверяем владельца
-    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
-    if (userResult.rows.length > 0) {
-      const user = userResult.rows[0];
-      const isValid = await bcrypt.compare(password, user.password_hash);
-      if (isValid) {
-        return res.json({
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: 'owner',
-          ownerId: user.id
-        });
+    
+    // 1. Владельцы
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
+    if (result.rows.length > 0) {
+      const user = result.rows[0];
+      if (user.password_hash) {
+        const isValid = await bcrypt.compare(password, user.password_hash);
+        if (isValid) {
+          const { password_hash, ...safeUser } = user;
+          return res.json({ ...safeUser, ownerId: safeUser.id });
+        }
       }
     }
 
-    // Потом проверяем сотрудника
-    const empResult = await pool.query(
-      'SELECT e.*, u.id as owner_id FROM employees e JOIN users u ON e.owner_id = u.id WHERE e.login = $1',
-      [cleanEmail]
-    );
-    if (empResult.rows.length > 0) {
-      const emp = empResult.rows[0];
-      const isValid = await bcrypt.compare(password, emp.password_hash);
-      if (isValid) {
+    // 2. Сотрудники
+    const empData = await pool.query("SELECT user_id, data FROM app_store WHERE key = 'employees'");
+    for (const row of empData.rows) {
+      const employees = Array.isArray(row.data) ? row.data : [];
+      const employee = employees.find(e => 
+        e.login && (e.login.toLowerCase() === cleanEmail || e.login === email) && 
+        e.password === password
+      );
+
+      if (employee) {
         return res.json({
-          id: emp.id,
-          email: emp.login,
-          name: emp.name,
-          role: emp.role,
-          ownerId: emp.owner_id,
-          permissions: emp.permissions
+          id: employee.id,
+          email: employee.login,
+          name: employee.name,
+          role: employee.role,
+          ownerId: row.user_id,
+          permissions: employee.permissions
         });
       }
     }
 
     return res.status(401).json({ error: 'Неверный логин или пароль' });
   } catch (err) {
-    console.error('Ошибка входа:', err);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
 // Получение данных
-// Получение данных
 app.post('/api/data', async (req, res) => {
-  console.log('📥 GET DATA — RAW:', req.body);
   const { key, user_id } = req.body;
-  if (!key || !user_id) {
-    console.error('❌ Missing key or user_id');
-    return res.status(400).json({ error: 'Missing key or user_id' });
-  }
+  if (!key || !user_id) return res.status(400).json({ error: 'Missing key or user_id' });
 
   try {
-    console.log('🔍 Запрос к БД:', { user_id, key });
-    // ИСПРАВЛЕНО: owner_id → user_id
     const result = await pool.query(
       'SELECT data FROM app_store WHERE user_id = $1 AND key = $2',
       [user_id, key]
     );
-    console.log('✅ Получено данных:', result.rows.length);
-    res.json(result.rows[0]?.data || []);
+    
+    let data = result.rows[0]?.data;
+
+    // Гарантируем возврат массива для списочных ключей
+    if (ARRAY_KEYS.includes(key)) {
+      if (!Array.isArray(data)) data = [];
+    }
+
+    res.json(data || (ARRAY_KEYS.includes(key) ? [] : {}));
   } catch (err) {
-    console.error('💥 ОШИБКА ПРИ ЧТЕНИИ:', err.message);
     res.status(500).json({ error: 'Ошибка БД' });
   }
 });
 
 // Сохранение данных
 app.post('/api/data/save', async (req, res) => {
-  console.log('📥 SAVE DATA — RAW:', req.body);
   const { key, data, user_id } = req.body;
-  if (!key || !user_id) {
-    console.error('❌ Missing key or user_id');
-    return res.status(400).json({ error: 'Missing key or user_id' });
+  if (!key || !user_id) return res.status(400).json({ error: 'Missing key or user_id' });
+
+  let sanitizedData = data;
+
+  // Валидация типов перед сохранением
+  if (ARRAY_KEYS.includes(key)) {
+    if (!Array.isArray(data)) {
+      console.warn(`[Validation] Key "${key}" expected array but got ${typeof data}. Forcing [].`);
+      sanitizedData = [];
+    }
   }
 
   try {
-    // Валидация данных
-    if (typeof data === 'undefined') {
-      console.error('❌ Data is undefined');
-      return res.status(400).json({ error: 'Data is undefined' });
-    }
-
-    // Преобразование в JSON и обратно для очистки
-    let cleanData = data;
-    if (Array.isArray(data)) {
-      cleanData = data.map(item => item || {});
-    } else if (typeof data === 'object') {
-      cleanData = Object.fromEntries(
-        Object.entries(data).filter(([_, v]) => v !== undefined)
-      );
-    }
-
-    // Проверка на корректность JSON
-    const jsonString = JSON.stringify(cleanData);
-    JSON.parse(jsonString); // ← Это вызовет ошибку, если JSON некорректен
-
-    console.log('🔍 Проверка пользователя...');
-    const userCheck = await pool.query('SELECT 1 FROM users WHERE id = $1', [user_id]);
-    if (userCheck.rows.length === 0) {
-      console.error('❌ Пользователь не найден:', user_id);
-      return res.status(400).json({ error: 'Invalid user_id' });
-    }
-
-    console.log('📤 Сохранение данных...');
     await pool.query(
       `INSERT INTO app_store (user_id, key, data) 
-       VALUES ($1, $2, $3::jsonb)
+       VALUES ($1, $2, $3)
        ON CONFLICT (user_id, key) 
-       DO UPDATE SET data = $3::jsonb, updated_at = NOW()`,
-      [user_id, key, cleanData]
+       DO UPDATE SET data = $3, updated_at = NOW()`,
+      [user_id, key, JSON.stringify(sanitizedData)]
     );
-    console.log('✅ Данные сохранены');
     res.sendStatus(200);
   } catch (err) {
-    console.error('💥 ОШИБКА ПРИ СОХРАНЕНИИ:', err.message);
-    res.status(500).json({ error: 'Ошибка БД: ' + err.message });
+    res.status(500).json({ error: 'Ошибка БД' });
   }
 });
 
-// Создание сотрудника (только для владельца)
-app.post('/api/employees', async (req, res) => {
-  const { user_id, login, password, name, role, permissions } = req.body; // ← ИЗМЕНЕНО НА user_id
-  if (!user_id || !login || !password || !name) {
-    return res.status(400).json({ error: 'Все поля обязательны' });
-  }
-
+app.post('/api/auth/register', async (req, res) => {
+  const { email, password, name } = req.body;
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      `INSERT INTO employees (owner_id, login, password_hash, name, role, permissions)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, login, name, role, permissions`,
-      [user_id, login, hashedPassword, name, role || 'seller', JSON.stringify(permissions || {})]
+      'INSERT INTO users (email, password_hash, name) VALUES ($1, $2, $3) RETURNING id, email, name, role',
+      [email.toLowerCase().trim(), hashedPassword, name]
     );
-    res.status(201).json(result.rows[0]);
+    const user = result.rows[0];
+    res.status(201).json({ ...user, ownerId: user.id });
   } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ error: 'Сотрудник с таким логином уже существует' });
-    }
-    console.error('Ошибка создания сотрудника:', err);
-    res.status(500).json({ error: 'Ошибка создания сотрудника' });
+    res.status(err.code === '23505' ? 409 : 500).json({ error: 'Ошибка регистрации' });
   }
 });
 
-initAdmin().then(() => {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Backend запущен на порту ${PORT}`);
-  });
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Backend запущен на порту ${PORT}`);
 });

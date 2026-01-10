@@ -50,115 +50,102 @@ const App: React.FC = () => {
   const isDataLoaded = useRef(false);
 
   const fetchAllData = async (silent = false) => {
-  if (!isAuthenticated) {
-    setIsLoading(false);
-    return;
-  }
-  if (!silent) setIsLoading(true);
-  setSyncStatus('SYNCING');
-
-  try {
-    console.log('📥 Загружаем данные с сервера...');
-    const [p, t, s, c, sup, cust, emp, cats, sett, cart, batch] = await Promise.all([
-      db.getData('products'),
-      db.getData('transactions'),
-      db.getData('sales'),
-      db.getData('cashEntries'),
-      db.getData('suppliers'),
-      db.getData('customers'),
-      db.getData('employees'),
-      db.getData('categories'),
-      db.getData('settings'),
-      db.getData('posCart'),
-      db.getData('warehouseBatch')
-    ]);
-
-    console.log('✅ Получены данные:', { products: p?.length, settings: sett });
-
-    // Безопасная установка состояния
-    if (Array.isArray(p)) setProducts(p);
-    if (Array.isArray(t)) setTransactions(t);
-    if (Array.isArray(s)) setSales(s);
-    if (Array.isArray(c)) setCashEntries(c);
-    if (Array.isArray(sup)) setSuppliers(sup);
-    if (Array.isArray(cust)) setCustomers(cust);
-    if (Array.isArray(emp)) setEmployees(emp);
-    if (Array.isArray(cats) && cats.length) setCategories(cats);
-    if (Array.isArray(cart)) setPosCart(cart);
-    if (Array.isArray(batch)) setWarehouseBatch(batch);
-
-    if (sett && typeof sett === 'object' && sett.shopName) {
-      setSettings(sett as AppSettings);
+    if (!isAuthenticated) {
+      setIsLoading(false);
+      return;
     }
+    if (!silent) setIsLoading(true);
+    setSyncStatus('SYNCING');
 
-    isDataLoaded.current = true;
-    setSyncStatus('IDLE');
-  } catch (e) {
-    console.error('Fetch all data error:', e);
-    setSyncStatus('ERROR');
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-  useEffect(() => {
-  const userJson = localStorage.getItem('currentUser');
-  if (userJson) {
     try {
-      const user = JSON.parse(userJson);
-      setCurrentUser(user);
-      setIsAuthenticated(true);
-      // Загружаем данные сразу после установки пользователя
-      fetchAllData(true); // silent = true, чтобы не показывать лоадер
+      const [p, t, s, c, sup, cust, emp, cats, sett, cart, batch] = await Promise.all([
+        db.getData('products'),
+        db.getData('transactions'),
+        db.getData('sales'),
+        db.getData('cashEntries'),
+        db.getData('suppliers'),
+        db.getData('customers'),
+        db.getData('employees'),
+        db.getData('categories'),
+        db.getData('settings'),
+        db.getData('posCart'),
+        db.getData('warehouseBatch')
+      ]);
+
+      // Гарантируем, что данные - это массивы
+      if (Array.isArray(p)) setProducts(p);
+      if (Array.isArray(t)) setTransactions(t);
+      if (Array.isArray(s)) setSales(s);
+      if (Array.isArray(c)) setCashEntries(c);
+      if (Array.isArray(sup)) setSuppliers(sup);
+      if (Array.isArray(cust)) setCustomers(cust);
+      if (Array.isArray(emp)) setEmployees(emp);
+      if (Array.isArray(cats) && cats.length) setCategories(cats);
+
+      if (sett && sett.shopName) setSettings(sett);
+      if (Array.isArray(cart)) setPosCart(cart);
+      if (Array.isArray(batch)) setWarehouseBatch(batch);
+
+      isDataLoaded.current = true;
+      setSyncStatus('IDLE');
     } catch (e) {
-      console.error('Ошибка парсинга currentUser:', e);
+      console.error('Fetch all data error:', e);
+      setSyncStatus('ERROR');
+    } finally {
       setIsLoading(false);
     }
-  } else {
-    setIsLoading(false);
-  }
-}, []);
+  };
+
+  useEffect(() => {
+    const userJson = localStorage.getItem('currentUser');
+    if (userJson) {
+      try {
+        const u = JSON.parse(userJson);
+        setCurrentUser(u);
+        setIsAuthenticated(true);
+      } catch(e) {
+        localStorage.removeItem('currentUser');
+      }
+    } else {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated) fetchAllData();
   }, [isAuthenticated]);
 
+  // Эффект автоматического сохранения с валидацией
   useEffect(() => {
-  if (!isDataLoaded.current || isLoading || !isAuthenticated) return;
+    if (!isDataLoaded.current || isLoading || !isAuthenticated) return;
 
-  const timer = setTimeout(() => {
-    setSyncStatus('SYNCING');
+    const timer = setTimeout(() => {
+      setSyncStatus('SYNCING');
 
-    // Добавьте проверку типа
-    const safeProducts = Array.isArray(products) ? products : [];
-    const safeTransactions = Array.isArray(transactions) ? transactions : [];
-    const safeSales = Array.isArray(sales) ? sales : [];
-    const safeCashEntries = Array.isArray(cashEntries) ? cashEntries : [];
-    const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
-    const safeCustomers = Array.isArray(customers) ? customers : [];
-    const safeEmployees = Array.isArray(employees) ? employees : [];
-    const safeCategories = Array.isArray(categories) ? categories : INITIAL_CATEGORIES;
-    const safePosCart = Array.isArray(posCart) ? posCart : [];
-    const safeWarehouseBatch = Array.isArray(warehouseBatch) ? warehouseBatch : [];
+      // Карта данных для сохранения с принудительной проверкой на массив
+      const syncMap = [
+        { key: 'products', data: Array.isArray(products) ? products : [] },
+        { key: 'transactions', data: Array.isArray(transactions) ? transactions : [] },
+        { key: 'sales', data: Array.isArray(sales) ? sales : [] },
+        { key: 'cashEntries', data: Array.isArray(cashEntries) ? cashEntries : [] },
+        { key: 'suppliers', data: Array.isArray(suppliers) ? suppliers : [] },
+        { key: 'customers', data: Array.isArray(customers) ? customers : [] },
+        { key: 'employees', data: Array.isArray(employees) ? employees : [] },
+        { key: 'categories', data: Array.isArray(categories) ? categories : INITIAL_CATEGORIES },
+        { key: 'settings', data: settings },
+        { key: 'posCart', data: Array.isArray(posCart) ? posCart : [] },
+        { key: 'warehouseBatch', data: Array.isArray(warehouseBatch) ? warehouseBatch : [] }
+      ];
 
-    Promise.all([
-      db.saveData('products', safeProducts),
-      db.saveData('transactions', safeTransactions),
-      db.saveData('sales', safeSales),
-      db.saveData('cashEntries', safeCashEntries),
-      db.saveData('suppliers', safeSuppliers),
-      db.saveData('customers', safeCustomers),
-      db.saveData('employees', safeEmployees),
-      db.saveData('categories', safeCategories),
-      db.saveData('settings', settings),
-      db.saveData('posCart', safePosCart),
-      db.saveData('warehouseBatch', safeWarehouseBatch)
-    ]).then(results => {
-      setSyncStatus(results.every(r => r) ? 'IDLE' : 'ERROR');
-    });
-  }, 2000);
-  return () => clearTimeout(timer);
-}, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch]);
+      Promise.all(syncMap.map(item =>
+        db.saveData(item.key, item.data)
+      )).then(results => {
+        setSyncStatus(results.every(r => r) ? 'IDLE' : 'ERROR');
+      });
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch]);
 
   const handleLogin = (user: User) => {
     setIsAuthenticated(true);
@@ -176,18 +163,6 @@ const App: React.FC = () => {
 
   const renderView = () => {
     if (!currentUser) return null;
-
-    if (currentUser.role === 'admin' && view === 'TENANT_ADMIN') {
-        return (
-            <div className="p-6 bg-white rounded-3xl shadow-sm border border-slate-100">
-                <h2 className="text-xl font-black mb-4 text-indigo-600">Управление аккаунтами</h2>
-                <div className="p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center">
-                    <i className="fas fa-tools text-2xl text-slate-300 mb-2"></i>
-                    <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest">Панель управления пользователями находится в разработке</p>
-                </div>
-            </div>
-        );
-    }
 
     switch (view) {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} />;
@@ -278,12 +253,6 @@ const App: React.FC = () => {
               <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i className="fas fa-user-tie"></i></div>
               <span className="font-bold text-slate-700">Сотрудники</span>
             </button>
-            {currentUser.role === 'admin' && (
-              <button onClick={() => setView('TENANT_ADMIN')} className="w-full bg-slate-800 text-white p-5 rounded-3xl shadow-sm flex items-center gap-4 hover:bg-black transition-colors">
-                <div className="w-12 h-12 bg-white/10 text-white rounded-2xl flex items-center justify-center"><i className="fas fa-crown"></i></div>
-                <span className="font-bold">Панель Суперадмина</span>
-              </button>
-            )}
             <button onClick={() => setView('SETTINGS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
               <div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-2xl flex items-center justify-center"><i className="fas fa-cog"></i></div>
               <span className="font-bold text-slate-700">Настройки</span>
@@ -298,7 +267,7 @@ const App: React.FC = () => {
   if (isLoading) return (
     <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-[300]">
       <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-      <p className="mt-6 font-black text-indigo-600 uppercase tracking-[0.2em] text-xs">Подключение к системе...</p>
+      <p className="mt-6 font-black text-indigo-600 uppercase tracking-[0.2em] text-xs">Загрузка данных...</p>
     </div>
   );
 
@@ -321,7 +290,7 @@ const App: React.FC = () => {
             <div className="w-6 h-6 bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center font-black">
               {currentUser?.name?.[0].toUpperCase() || 'U'}
             </div>
-            <span className="text-xs font-bold text-slate-700">{currentUser?.name}</span>
+            <span className="text-xs font-bold text-slate-700 truncate max-w-[80px]">{currentUser?.name}</span>
           </button>
         </div>
       </header>
