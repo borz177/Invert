@@ -49,6 +49,7 @@ const App: React.FC = () => {
 
   const isDataLoaded = useRef(false);
 
+  // Права: Владелец (нет ownerId), Админ или Управляющий
   const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'управляющий' || !currentUser?.ownerId;
 
   const fetchAllData = async (silent = false) => {
@@ -246,12 +247,10 @@ const App: React.FC = () => {
           </button>
 
           <div className="grid grid-cols-1 gap-3">
-            {isAdminOrManager && (
-              <button onClick={() => setView('SUPPLIERS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
-                <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center"><i className="fas fa-truck-field"></i></div>
-                <span className="font-bold text-slate-700">Поставщики</span>
-              </button>
-            )}
+            <button onClick={() => setView('SUPPLIERS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
+              <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center"><i className="fas fa-truck-field"></i></div>
+              <span className="font-bold text-slate-700">Поставщики</span>
+            </button>
             <button onClick={() => setView('CLIENTS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
               <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i className="fas fa-users"></i></div>
               <span className="font-bold text-slate-700">Клиенты</span>
@@ -262,12 +261,10 @@ const App: React.FC = () => {
                 <span className="font-bold text-slate-700">Сотрудники</span>
               </button>
             )}
-            {isAdminOrManager && (
-              <button onClick={() => setView('SETTINGS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
-                <div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-2xl flex items-center justify-center"><i className="fas fa-cog"></i></div>
-                <span className="font-bold text-slate-700">Настройки</span>
-              </button>
-            )}
+            <button onClick={() => setView('SETTINGS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50">
+              <div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-2xl flex items-center justify-center"><i className="fas fa-cog"></i></div>
+              <span className="font-bold text-slate-700">Настройки</span>
+            </button>
           </div>
         </div>
       );
