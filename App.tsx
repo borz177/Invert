@@ -58,6 +58,7 @@ const App: React.FC = () => {
   setSyncStatus('SYNCING');
 
   try {
+    console.log('📥 Загружаем данные с сервера...');
     const [p, t, s, c, sup, cust, emp, cats, sett, cart, batch] = await Promise.all([
       db.getData('products'),
       db.getData('transactions'),
@@ -71,6 +72,8 @@ const App: React.FC = () => {
       db.getData('posCart'),
       db.getData('warehouseBatch')
     ]);
+
+    console.log('✅ Получены данные:', { products: p?.length, settings: sett });
 
     // Безопасная установка состояния
     if (Array.isArray(p)) setProducts(p);
@@ -99,14 +102,22 @@ const App: React.FC = () => {
 };
 
   useEffect(() => {
-    const userJson = localStorage.getItem('currentUser');
-    if (userJson) {
-      setCurrentUser(JSON.parse(userJson));
+  const userJson = localStorage.getItem('currentUser');
+  if (userJson) {
+    try {
+      const user = JSON.parse(userJson);
+      setCurrentUser(user);
       setIsAuthenticated(true);
-    } else {
+      // Загружаем данные сразу после установки пользователя
+      fetchAllData(true); // silent = true, чтобы не показывать лоадер
+    } catch (e) {
+      console.error('Ошибка парсинга currentUser:', e);
       setIsLoading(false);
     }
-  }, []);
+  } else {
+    setIsLoading(false);
+  }
+}, []);
 
   useEffect(() => {
     if (isAuthenticated) fetchAllData();
