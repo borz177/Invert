@@ -54,6 +54,21 @@ const App: React.FC = () => {
     currentUser?.role === 'управляющий' ||
     (currentUser && currentUser.id === currentUser.ownerId);
 
+  // Fix: handleLogin to process user authentication success
+  const handleLogin = (user: User) => {
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+    localStorage.setItem('currentUser', JSON.stringify(user));
+  };
+
+  // Fix: handleLogout to clear user session and reset view
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    localStorage.removeItem('currentUser');
+    setView('DASHBOARD');
+  };
+
   const fetchAllData = async (silent = false) => {
     if (!isAuthenticated) {
       setIsLoading(false);
@@ -156,10 +171,27 @@ const App: React.FC = () => {
 
   const handleSale = (s: Sale) => {
     setSales([s, ...sales]);
+
+    // Автоматическая запись в кассу при оплате (Нал или Карта)
+    if ((s.paymentMethod === 'CASH' || s.paymentMethod === 'CARD') && currentUser) {
+      const cashEntry: CashEntry = {
+        id: `sale-${s.id}`,
+        amount: s.total,
+        type: 'INCOME',
+        category: 'Продажа',
+        date: s.date,
+        description: `Продажа №${s.id.slice(-4)} (${s.paymentMethod === 'CASH' ? 'Нал' : 'Карта'})`,
+        employeeId: currentUser.id,
+        customerId: s.customerId
+      };
+      setCashEntries(prev => [cashEntry, ...prev]);
+    }
+
     // Обновляем долг клиента, если продажа в долг
     if (s.paymentMethod === 'DEBT' && s.customerId) {
       updateCustomerDebt(s.customerId, s.total);
     }
+
     // Списываем остатки
     setProducts(prev => prev.map(p => {
       const soldItem = s.items.find(si => si.productId === p.id);
@@ -206,6 +238,10 @@ const App: React.FC = () => {
     const sale = sales.find(s => s.id === id);
     if (!sale || sale.isDeleted) return;
     setSales(sales.map(s => s.id === id ? { ...s, isDeleted: true } : s));
+
+    // Если была запись в кассе, ее нужно либо удалить, либо сторнировать
+    setCashEntries(prev => prev.filter(e => e.id !== `sale-${id}`));
+
     // Возвращаем товар
     setProducts(prev => prev.map(p => {
       const item = sale.items.find(si => si.productId === p.id);
@@ -227,20 +263,6 @@ const App: React.FC = () => {
     if (t.type === 'IN' && t.paymentMethod === 'DEBT' && t.supplierId) {
       updateSupplierDebt(t.supplierId, -(t.quantity * (t.pricePerUnit || 0)));
     }
-  };
-
-  const handleLogin = (user: User) => {
-    setIsAuthenticated(true);
-    setCurrentUser(user);
-    localStorage.setItem('currentUser', JSON.stringify(user));
-    isDataLoaded.current = false;
-  };
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setCurrentUser(null);
-    localStorage.removeItem('currentUser');
-    window.location.reload();
   };
 
   const renderView = () => {

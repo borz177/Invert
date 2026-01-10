@@ -25,6 +25,7 @@ const ProductList: React.FC<ProductListProps> = ({
   const [showForm, setShowForm] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [showCatForm, setShowCatForm] = useState(false);
+  const [showMoveModal, setShowMoveModal] = useState<Product | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCat, setEditingCat] = useState<string | null>(null);
   const [newCatName, setNewCatName] = useState('');
@@ -60,13 +61,14 @@ const ProductList: React.FC<ProductListProps> = ({
     setEditingCat(null);
     setNewCatName('');
     setBulkText('');
+    setShowMoveModal(null);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.name && formData.price !== undefined) {
-      // Преобразование пустых или некорректных значений в 0
       const parseNum = (val: any) => {
+        if (val === '' || val === null || val === undefined) return 0;
         const n = parseFloat(val);
         return isNaN(n) ? 0 : n;
       };
@@ -89,6 +91,14 @@ const ProductList: React.FC<ProductListProps> = ({
         onAdd(finalProduct);
       }
       closeForm();
+    }
+  };
+
+  const handleMoveProduct = (newCat: string) => {
+    if (showMoveModal) {
+      onUpdate({ ...showMoveModal, category: newCat });
+      setShowMoveModal(null);
+      setActiveMenuId(null);
     }
   };
 
@@ -133,16 +143,14 @@ const ProductList: React.FC<ProductListProps> = ({
     setConfirmDelete(null);
   };
 
-  const filteredBySearch = Array.isArray(products)
-  ? products.filter(p =>
-      p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.sku?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  : [];
+  const filteredBySearch = products.filter(p =>
+    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.sku.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  const activeProducts = selectedCategory && Array.isArray(filteredBySearch)
-  ? filteredBySearch.filter(p => p.category === selectedCategory)
-  : [];
+  const activeProducts = selectedCategory
+    ? filteredBySearch.filter(p => p.category === selectedCategory)
+    : [];
 
   const productCountPerCategory = products.reduce((acc, p) => {
     acc[p.category] = (acc[p.category] || 0) + 1;
@@ -222,9 +230,20 @@ const ProductList: React.FC<ProductListProps> = ({
                   <div className="absolute top-5 right-5 z-20">
                     <button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === p.id ? null : p.id); }} className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-slate-100"><i className="fas fa-ellipsis-v text-xs"></i></button>
                     {activeMenuId === p.id && (
-                      <div className="absolute top-10 right-0 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 w-40 z-30 animate-fade-in">
-                        {canEdit && <button onClick={(e) => { e.stopPropagation(); openEdit(p); }} className="w-full px-4 py-2.5 text-left text-sm font-bold text-slate-600 flex items-center gap-2 hover:bg-slate-50">Изменить</button>}
-                        {canDelete && <button onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: 'PROD', id: p.id, name: p.name }); setActiveMenuId(null); }} className="w-full px-4 py-2.5 text-left text-sm font-bold text-red-500 flex items-center gap-2 hover:bg-red-50">Удалить</button>}
+                      <div className="absolute top-10 right-0 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 w-48 z-30 animate-fade-in">
+                        {canEdit && (
+                          <>
+                            <button onClick={(e) => { e.stopPropagation(); openEdit(p); }} className="w-full px-4 py-2.5 text-left text-sm font-bold text-slate-600 flex items-center gap-2 hover:bg-slate-50">
+                              <i className="fas fa-pen text-indigo-400 w-4"></i> Изменить
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); setShowMoveModal(p); setActiveMenuId(null); }} className="w-full px-4 py-2.5 text-left text-sm font-bold text-slate-600 flex items-center gap-2 hover:bg-slate-50">
+                              <i className="fas fa-exchange-alt text-orange-400 w-4"></i> Переместить
+                            </button>
+                          </>
+                        )}
+                        {canDelete && <button onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: 'PROD', id: p.id, name: p.name }); setActiveMenuId(null); }} className="w-full px-4 py-2.5 text-left text-sm font-bold text-red-500 flex items-center gap-2 hover:bg-red-50 border-t border-slate-50 mt-1">
+                          <i className="fas fa-trash text-red-400 w-4"></i> Удалить
+                        </button>}
                       </div>
                     )}
                   </div>
@@ -242,9 +261,38 @@ const ProductList: React.FC<ProductListProps> = ({
         </div>
       )}
 
+      {/* Модальное окно перемещения */}
+      {showMoveModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={closeForm}>
+          <div className="bg-white p-7 rounded-t-[40px] sm:rounded-[40px] shadow-2xl w-full max-w-sm space-y-5 animate-slide-up" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-xl font-black text-slate-800">Переместить товар</h3>
+              <button onClick={closeForm} className="w-10 h-10 rounded-full bg-slate-50 text-slate-400"><i className="fas fa-times"></i></button>
+            </div>
+            <p className="text-xs text-slate-400 font-medium">Выберите папку, в которую хотите переместить товар <span className="text-slate-800 font-bold">"{showMoveModal.name}"</span></p>
+            <div className="max-h-60 overflow-y-auto space-y-2 no-scrollbar">
+              {categories.map(cat => (
+                <button
+                  key={cat}
+                  disabled={cat === showMoveModal.category}
+                  onClick={() => handleMoveProduct(cat)}
+                  className={`w-full p-4 rounded-2xl flex items-center justify-between border transition-all ${cat === showMoveModal.category ? 'bg-slate-50 text-slate-300 border-slate-100' : 'bg-white border-slate-100 hover:border-indigo-200 active:bg-indigo-50 text-slate-700 font-bold'}`}
+                >
+                  <span className="flex items-center gap-3">
+                    <i className={`fas fa-folder ${cat === showMoveModal.category ? 'text-slate-200' : 'text-indigo-400'}`}></i>
+                    {cat}
+                  </span>
+                  {cat === showMoveModal.category && <span className="text-[8px] font-black uppercase">Текущая</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showForm && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[140] flex items-center justify-center p-4" onClick={closeForm}>
-          <form onSubmit={handleSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-w-md space-y-5 animate-fade-in max-h-[90vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
+          <form onSubmit={handleSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-md space-y-5 animate-fade-in max-h-[90vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
             <h3 className="text-2xl font-black text-slate-800">{editingId ? 'Изменить товар' : 'Новый товар'}</h3>
             <div className="space-y-4">
               <div className="space-y-1">
@@ -268,12 +316,10 @@ const ProductList: React.FC<ProductListProps> = ({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Закуп (₽)</label>
-                  {/* Fix: Parse string value to number */}
                   <input type="number" step="0.01" inputMode="decimal" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.cost === 0 ? '' : formData.cost} onChange={e => setFormData({...formData, cost: parseFloat(e.target.value) || 0})} />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Продажа (₽)</label>
-                  {/* Fix: Parse string value to number */}
                   <input type="number" step="0.01" inputMode="decimal" required className="w-full p-4 bg-indigo-50 border border-indigo-100 rounded-2xl outline-none font-black text-indigo-600" value={formData.price === 0 ? '' : formData.price} onChange={e => setFormData({...formData, price: parseFloat(e.target.value) || 0})} />
                 </div>
               </div>
@@ -286,13 +332,11 @@ const ProductList: React.FC<ProductListProps> = ({
                     inputMode="decimal"
                     className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
                     value={formData.quantity === 0 || formData.quantity === null || formData.quantity === undefined ? '' : formData.quantity}
-                    /* Fix: Parse string value to number */
                     onChange={e => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Мин. порог</label>
-                  {/* Fix: Parse string value to number */}
                   <input type="number" inputMode="numeric" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.minStock === 0 ? '' : formData.minStock} onChange={e => setFormData({...formData, minStock: parseFloat(e.target.value) || 0})} />
                 </div>
               </div>
