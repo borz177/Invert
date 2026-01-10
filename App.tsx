@@ -49,7 +49,6 @@ const App: React.FC = () => {
 
   const isDataLoaded = useRef(false);
 
-  // Права: Владелец (id === ownerId), Админ или Управляющий
   const isAdminOrManager =
     currentUser?.role === 'admin' ||
     currentUser?.role === 'управляющий' ||
@@ -126,17 +125,17 @@ const App: React.FC = () => {
     const timer = setTimeout(() => {
       setSyncStatus('SYNCING');
       const syncMap = [
-        { key: 'products', data: Array.isArray(products) ? products : [] },
-        { key: 'transactions', data: Array.isArray(transactions) ? transactions : [] },
-        { key: 'sales', data: Array.isArray(sales) ? sales : [] },
-        { key: 'cashEntries', data: Array.isArray(cashEntries) ? cashEntries : [] },
-        { key: 'suppliers', data: Array.isArray(suppliers) ? suppliers : [] },
-        { key: 'customers', data: Array.isArray(customers) ? customers : [] },
-        { key: 'employees', data: Array.isArray(employees) ? employees : [] },
-        { key: 'categories', data: Array.isArray(categories) ? categories : INITIAL_CATEGORIES },
+        { key: 'products', data: products },
+        { key: 'transactions', data: transactions },
+        { key: 'sales', data: sales },
+        { key: 'cashEntries', data: cashEntries },
+        { key: 'suppliers', data: suppliers },
+        { key: 'customers', data: customers },
+        { key: 'employees', data: employees },
+        { key: 'categories', data: categories },
         { key: 'settings', data: settings },
-        { key: 'posCart', data: Array.isArray(posCart) ? posCart : [] },
-        { key: 'warehouseBatch', data: Array.isArray(warehouseBatch) ? warehouseBatch : [] }
+        { key: 'posCart', data: posCart },
+        { key: 'warehouseBatch', data: warehouseBatch }
       ];
 
       Promise.all(syncMap.map(item => db.saveData(item.key, item.data))).then(results => {
@@ -145,6 +144,90 @@ const App: React.FC = () => {
     }, 2000);
     return () => clearTimeout(timer);
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch]);
+
+  // Хелперы для обновления долгов
+  const updateCustomerDebt = (id: string, amount: number) => {
+    setCustomers(prev => prev.map(c => c.id === id ? { ...c, debt: (c.debt || 0) + amount } : c));
+  };
+
+  const updateSupplierDebt = (id: string, amount: number) => {
+    setSuppliers(prev => prev.map(s => s.id === id ? { ...s, debt: (s.debt || 0) + amount } : s));
+  };
+
+  const handleSale = (s: Sale) => {
+    setSales([s, ...sales]);
+    // Обновляем долг клиента, если продажа в долг
+    if (s.paymentMethod === 'DEBT' && s.customerId) {
+      updateCustomerDebt(s.customerId, s.total);
+    }
+    // Списываем остатки
+    setProducts(prev => prev.map(p => {
+      const soldItem = s.items.find(si => si.productId === p.id);
+      return soldItem ? { ...p, quantity: p.quantity - soldItem.quantity } : p;
+    }));
+  };
+
+  const handleTransactionsBulk = (ts: Transaction[]) => {
+    setTransactions([...ts, ...transactions]);
+    ts.forEach(t => {
+      // Обновляем остатки
+      setProducts(prev => prev.map(p => p.id === t.productId ? { ...p, quantity: p.quantity + (t.type === 'IN' ? t.quantity : -t.quantity) } : p));
+      // Если приход в долг - увеличиваем наш долг поставщику
+      if (t.type === 'IN' && t.paymentMethod === 'DEBT' && t.supplierId) {
+        updateSupplierDebt(t.supplierId, t.quantity * (t.pricePerUnit || 0));
+      }
+    });
+  };
+
+  const handleCashEntry = (entry: CashEntry) => {
+    setCashEntries([entry, ...cashEntries]);
+    // Если это оплата долга клиентом - уменьшаем его долг
+    if (entry.type === 'INCOME' && entry.customerId) {
+      updateCustomerDebt(entry.customerId, -entry.amount);
+    }
+    // Если это оплата поставщику - уменьшаем наш долг перед ним
+    if (entry.type === 'EXPENSE' && entry.supplierId) {
+      updateSupplierDebt(entry.supplierId, -entry.amount);
+    }
+  };
+
+  const handleAddCashEntrySimple = (entry: Omit<CashEntry, 'id' | 'date' | 'employeeId'>) => {
+    if (!currentUser) return;
+    const fullEntry: CashEntry = {
+      ...entry,
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      employeeId: currentUser.id
+    };
+    handleCashEntry(fullEntry);
+  };
+
+  const deleteSale = (id: string) => {
+    const sale = sales.find(s => s.id === id);
+    if (!sale || sale.isDeleted) return;
+    setSales(sales.map(s => s.id === id ? { ...s, isDeleted: true } : s));
+    // Возвращаем товар
+    setProducts(prev => prev.map(p => {
+      const item = sale.items.find(si => si.productId === p.id);
+      return item ? { ...p, quantity: p.quantity + item.quantity } : p;
+    }));
+    // Если был долг - убираем его
+    if (sale.paymentMethod === 'DEBT' && sale.customerId) {
+      updateCustomerDebt(sale.customerId, -sale.total);
+    }
+  };
+
+  const deleteTransaction = (id: string) => {
+    const t = transactions.find(x => x.id === id);
+    if (!t || t.isDeleted) return;
+    setTransactions(transactions.map(x => x.id === id ? { ...x, isDeleted: true } : x));
+    // Возвращаем остатки
+    setProducts(prev => prev.map(p => p.id === t.productId ? { ...p, quantity: p.quantity + (t.type === 'IN' ? -t.quantity : t.quantity) } : p));
+    // Если был долг поставщику - убираем
+    if (t.type === 'IN' && t.paymentMethod === 'DEBT' && t.supplierId) {
+      updateSupplierDebt(t.supplierId, -(t.quantity * (t.pricePerUnit || 0)));
+    }
+  };
 
   const handleLogin = (user: User) => {
     setIsAuthenticated(true);
@@ -160,28 +243,14 @@ const App: React.FC = () => {
     window.location.reload();
   };
 
-  const addCashEntry = (entry: Omit<CashEntry, 'id' | 'date' | 'employeeId'>) => {
-    if (!currentUser) return;
-    const newEntry: CashEntry = {
-      ...entry,
-      id: Date.now().toString(),
-      date: new Date().toISOString(),
-      employeeId: currentUser.id
-    };
-    setCashEntries([newEntry, ...cashEntries]);
-  };
-
   const renderView = () => {
     if (!currentUser) return null;
 
     switch (view) {
       case 'DASHBOARD': return (
         <Dashboard
-          products={products}
-          sales={sales}
-          cashEntries={cashEntries}
-          customers={customers}
-          suppliers={suppliers}
+          products={products} sales={sales} cashEntries={cashEntries}
+          customers={customers} suppliers={suppliers}
           onNavigate={(v) => setView(v as AppView)}
         />
       );
@@ -207,26 +276,26 @@ const App: React.FC = () => {
         <Warehouse
           products={products} suppliers={suppliers} transactions={transactions}
           batch={warehouseBatch} setBatch={setWarehouseBatch}
-          onTransaction={t => setTransactions([{...t, employeeId: currentUser.id}, ...transactions])}
-          onTransactionsBulk={ts => setTransactions([...ts.map(t => ({...t, employeeId: currentUser.id})), ...transactions])}
-          onAddCashEntry={addCashEntry}
+          onTransaction={t => handleTransactionsBulk([{...t, employeeId: currentUser.id}])}
+          onTransactionsBulk={ts => handleTransactionsBulk(ts.map(t => ({...t, employeeId: currentUser.id})))}
+          onAddCashEntry={handleAddCashEntrySimple}
         />
       );
       case 'SALES': return (
         <POS
           products={products} customers={customers} cart={posCart} setCart={setPosCart}
           currentUserId={currentUser.id}
-          onSale={(s) => setSales([s, ...sales])}
+          onSale={handleSale}
         />
       );
-      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={(e) => setCashEntries([{...e, employeeId: currentUser.id}, ...cashEntries])} />;
+      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={handleCashEntry} />;
       case 'REPORTS': return <Reports sales={sales} products={products} transactions={transactions} />;
       case 'ALL_OPERATIONS': return (
         <AllOperations
           sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees}
           onUpdateTransaction={t => setTransactions(transactions.map(x => x.id === t.id ? t : x))}
-          onDeleteTransaction={id => setTransactions(transactions.map(t => t.id === id ? { ...t, isDeleted: true } : t))}
-          onDeleteSale={id => setSales(sales.map(s => s.id === id ? { ...s, isDeleted: true } : s))}
+          onDeleteTransaction={deleteTransaction}
+          onDeleteSale={deleteSale}
           onDeleteCashEntry={id => setCashEntries(cashEntries.filter(c => c.id !== id))}
           ownerId={currentUser.ownerId || currentUser.id}
           ownerName={currentUser.name}
@@ -260,7 +329,7 @@ const App: React.FC = () => {
             onDelete={id => setEmployees(employees.filter(x => x.id !== id))}
           />
         );
-      case 'PROFILE': return <Profile user={{id: currentUser.id, name: currentUser.name, role: currentUser.role as any, login: currentUser.email, password: '', salary: 0, revenuePercent: 0, profitPercent: 0, permissions: {canEditProduct: true, canCreateProduct: true, canDeleteProduct: true, canShowCost: true}} as Employee} sales={sales} onLogout={handleLogout} />;
+      case 'PROFILE': return <Profile user={{id: currentUser.id, name: currentUser.name, role: currentUser.role as any, login: currentUser.email, password: '', salary: 0, revenuePercent: 0, profitPercent: 0, permissions: (currentUser as any).permissions || {canEditProduct: true, canCreateProduct: true, canDeleteProduct: true, canShowCost: true}} as Employee} sales={sales} onLogout={handleLogout} />;
       case 'SETTINGS': return <Settings settings={settings} onUpdate={setSettings} onClear={() => {}} />;
       case 'MORE_MENU': return (
         <div className="space-y-4 animate-fade-in pb-10">

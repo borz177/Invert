@@ -8,6 +8,13 @@ interface ProfileProps {
   onLogout: () => void;
 }
 
+const PERMISSION_LABELS: Record<string, string> = {
+  canEditProduct: 'Редактирование товаров',
+  canCreateProduct: 'Добавление товаров',
+  canDeleteProduct: 'Удаление (корзина)',
+  canShowCost: 'Видеть себестоимость'
+};
+
 const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout }) => {
   if (!user) return null;
   const totalAmount = sales.reduce((acc, s) => acc + s.total, 0);
@@ -37,12 +44,12 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout }) => {
       </div>
 
       <div className="bg-white p-6 rounded-[32px] border border-slate-100">
-        <h3 className="font-black text-slate-800 text-sm mb-4 uppercase tracking-widest text-center">Ваши права</h3>
-        <div className="grid grid-cols-2 gap-2">
+        <h3 className="font-black text-slate-800 text-sm mb-4 uppercase tracking-widest text-center">Ваши права доступа</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {Object.entries(user.permissions).map(([key, value]) => (
-            <div key={key} className={`p-3 rounded-2xl flex items-center gap-2 ${value ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-300'}`}>
-              <i className={`fas ${value ? 'fa-check-circle' : 'fa-times-circle'} text-xs`}></i>
-              <span className="text-[10px] font-bold uppercase">{key.replace('can', '').replace(/([A-Z])/g, ' $1')}</span>
+            <div key={key} className={`p-4 rounded-2xl flex items-center justify-between gap-3 ${value ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-300 border border-red-50 opacity-60'}`}>
+              <span className="text-[11px] font-bold uppercase tracking-tight">{PERMISSION_LABELS[key] || key}</span>
+              <i className={`fas ${value ? 'fa-check-circle' : 'fa-times-circle'} text-sm`}></i>
             </div>
           ))}
         </div>
