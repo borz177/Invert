@@ -45,7 +45,6 @@ const initDb = async () => {
 
     await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT');
 
-    // Проверка структуры app_store
     const checkTable = await pool.query(`
       SELECT column_name 
       FROM information_schema.columns 
@@ -53,12 +52,9 @@ const initDb = async () => {
     `);
 
     if (checkTable.rows.length === 0) {
-      console.log('🏗️ Обновление структуры таблицы app_store...');
       try {
         await pool.query('ALTER TABLE app_store ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE');
-      } catch (e) {
-        console.log('Заметка: Таблица app_store обновляется.');
-      }
+      } catch (e) {}
     }
 
     await pool.query(`
@@ -78,7 +74,6 @@ const initDb = async () => {
         ['00000000-0000-0000-0000-000000000000', 'admin', ADMIN_PASSWORD_HASH, 'Суперадмин', 'admin']
       );
     }
-
     console.log('✅ БД готова');
   } catch (err) {
     console.error('❌ Ошибка БД:', err);
@@ -87,106 +82,89 @@ const initDb = async () => {
 
 initDb();
 
+// Обновление профиля
+app.post('/api/auth/update-profile', async (req, res) => {
+  const { userId, name, currentPassword, newPassword } = req.body;
+  if (!userId) return res.status(400).json({ error: 'User ID is required' });
+
+  try {
+    const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const user = userResult.rows[0];
+
+    // Если меняется пароль
+    let newHash = user.password_hash;
+    if (newPassword) {
+      const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+      if (!isValid) return res.status(401).json({ error: 'Текущий пароль неверен' });
+      newHash = await bcrypt.hash(newPassword, 10);
+    }
+
+    const updated = await pool.query(
+      'UPDATE users SET name = $1, password_hash = $2 WHERE id = $3 RETURNING id, email, name, role',
+      [name || user.name, newHash, userId]
+    );
+
+    res.json(updated.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка при обновлении профиля' });
+  }
+});
+
 const ARRAY_KEYS = [
   'products', 'transactions', 'sales', 'cashEntries',
   'suppliers', 'customers', 'employees', 'categories',
   'posCart', 'warehouseBatch'
 ];
 
-// Вход
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Email и пароль обязательны' });
-
   try {
     const cleanEmail = email.toLowerCase().trim();
-
-    // 1. Владельцы
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
     if (result.rows.length > 0) {
       const user = result.rows[0];
-      if (user.password_hash) {
-        const isValid = await bcrypt.compare(password, user.password_hash);
-        if (isValid) {
-          const { password_hash, ...safeUser } = user;
-          // Владелец всегда получает роль admin для доступа ко всему
-          return res.json({ ...safeUser, role: 'admin', ownerId: safeUser.id });
-        }
+      const isValid = await bcrypt.compare(password, user.password_hash);
+      if (isValid) {
+        const { password_hash, ...safeUser } = user;
+        return res.json({ ...safeUser, ownerId: safeUser.id });
       }
     }
-
-    // 2. Сотрудники
+    // Проверка сотрудников (в app_store)
     const empData = await pool.query("SELECT user_id, data FROM app_store WHERE key = 'employees'");
     for (const row of empData.rows) {
       const employees = Array.isArray(row.data) ? row.data : [];
-      const employee = employees.find(e =>
-        e.login && (e.login.toLowerCase() === cleanEmail || e.login === email) &&
-        e.password === password
-      );
-
+      const employee = employees.find(e => e.login === email && e.password === password);
       if (employee) {
-        return res.json({
-          id: employee.id,
-          email: employee.login,
-          name: employee.name,
-          role: employee.role,
-          ownerId: row.user_id,
-          permissions: employee.permissions
-        });
+        return res.json({ id: employee.id, email: employee.login, name: employee.name, role: employee.role, ownerId: row.user_id, permissions: employee.permissions });
       }
     }
-
     return res.status(401).json({ error: 'Неверный логин или пароль' });
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
-// Получение данных
 app.post('/api/data', async (req, res) => {
   const { key, user_id } = req.body;
-  if (!key || !user_id) return res.status(400).json({ error: 'Missing key or user_id' });
-
   try {
-    const result = await pool.query(
-      'SELECT data FROM app_store WHERE user_id = $1 AND key = $2',
-      [user_id, key]
-    );
-
+    const result = await pool.query('SELECT data FROM app_store WHERE user_id = $1 AND key = $2', [user_id, key]);
     let data = result.rows[0]?.data;
-    if (ARRAY_KEYS.includes(key)) {
-      if (!Array.isArray(data)) data = [];
-    }
+    if (ARRAY_KEYS.includes(key) && !Array.isArray(data)) data = [];
     res.json(data || (ARRAY_KEYS.includes(key) ? [] : {}));
-  } catch (err) {
-    res.status(500).json({ error: 'Ошибка БД' });
-  }
+  } catch (err) { res.status(500).json({ error: 'Ошибка БД' }); }
 });
 
-// Сохранение данных
 app.post('/api/data/save', async (req, res) => {
   const { key, data, user_id } = req.body;
-  if (!key || !user_id) return res.status(400).json({ error: 'Missing key or user_id' });
-
-  let sanitizedData = data;
-  if (ARRAY_KEYS.includes(key)) {
-    if (!Array.isArray(data)) {
-      sanitizedData = [];
-    }
-  }
-
   try {
     await pool.query(
-      `INSERT INTO app_store (user_id, key, data) 
-       VALUES ($1, $2, $3)
-       ON CONFLICT (user_id, key) 
-       DO UPDATE SET data = $3, updated_at = NOW()`,
-      [user_id, key, JSON.stringify(sanitizedData)]
+      `INSERT INTO app_store (user_id, key, data) VALUES ($1, $2, $3)
+       ON CONFLICT (user_id, key) DO UPDATE SET data = $3, updated_at = NOW()`,
+      [user_id, key, JSON.stringify(data)]
     );
     res.sendStatus(200);
-  } catch (err) {
-    res.status(500).json({ error: 'Ошибка БД' });
-  }
+  } catch (err) { res.status(500).json({ error: 'Ошибка БД' }); }
 });
 
 app.post('/api/auth/register', async (req, res) => {
@@ -198,13 +176,8 @@ app.post('/api/auth/register', async (req, res) => {
       [email.toLowerCase().trim(), hashedPassword, name, 'admin']
     );
     const user = result.rows[0];
-    // При регистрации возвращаем role: admin и ownerId = id, чтобы пользователь сразу стал владельцем
-    res.status(201).json({ ...user, role: 'admin', ownerId: user.id });
-  } catch (err) {
-    res.status(err.code === '23505' ? 409 : 500).json({ error: 'Ошибка регистрации' });
-  }
+    res.status(201).json({ ...user, ownerId: user.id });
+  } catch (err) { res.status(err.code === '23505' ? 409 : 500).json({ error: 'Ошибка регистрации' }); }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Backend запущен на порту ${PORT}`);
-});
+app.listen(PORT, '0.0.0.0', () => { console.log(`🚀 Backend на порту ${PORT}`); });

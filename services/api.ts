@@ -1,3 +1,4 @@
+
 import { Product, Transaction, Sale, CashEntry, Supplier, Customer, Employee, User } from '../types';
 
 const getApiUrl = () => {
@@ -47,6 +48,16 @@ export const db = {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ошибка входа');
       return data;
+    },
+    async updateProfile(userId: string, name: string, currentPassword?: string, newPassword?: string): Promise<User> {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/update-profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, name, currentPassword, newPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Ошибка обновления профиля');
+      return data;
     }
   },
 
@@ -54,40 +65,40 @@ export const db = {
     const userJson = localStorage.getItem('currentUser');
     if (!userJson) return null;
     const user: User & { ownerId?: string } = JSON.parse(userJson);
-    const targetOwnerId = user.ownerId || user.id;
+    const targetUserId = user.ownerId || user.id;
 
     try {
       const response = await fetchWithTimeout(`${API_BASE}/data`, {
         method: 'POST',
-        headers: {
+        headers: { 
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json' 
         },
-        body: JSON.stringify({ key, user_id: targetOwnerId })
+        body: JSON.stringify({ key, user_id: targetUserId })
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      localStorage.setItem(`cache_${targetOwnerId}_${key}`, JSON.stringify(data));
+      localStorage.setItem(`cache_${targetUserId}_${key}`, JSON.stringify(data));
       return data;
     } catch (e) {
-      const local = localStorage.getItem(`cache_${targetOwnerId}_${key}`);
+      const local = localStorage.getItem(`cache_${targetUserId}_${key}`);
       return local ? JSON.parse(local) : null;
     }
   },
 
-  async saveData(key: string, data: any) { // ← ИСПРАВЛЕНО: добавлено имя параметра
+  async saveData(key: string, data: any) {
     const userJson = localStorage.getItem('currentUser');
     if (!userJson) return false;
     const user: User & { ownerId?: string } = JSON.parse(userJson);
-    const targetOwnerId = user.ownerId || user.id;
+    const targetUserId = user.ownerId || user.id;
 
-    localStorage.setItem(`cache_${targetOwnerId}_${key}`, JSON.stringify(data));
+    localStorage.setItem(`cache_${targetUserId}_${key}`, JSON.stringify(data));
 
     try {
       const response = await fetchWithTimeout(`${API_BASE}/data/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, data, user_id: targetOwnerId })
+        body: JSON.stringify({ key, data, user_id: targetUserId })
       });
       return response.ok;
     } catch (e) {
