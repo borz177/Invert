@@ -187,11 +187,6 @@ app.post('/api/data/save', async (req, res) => {
   } catch (err) {
     console.error('💥 ОШИБКА ПРИ СОХРАНЕНИИ:', err.message);
     res.status(500).json({ error: 'Ошибка БД: ' + err.message });
-  } finally {
-    // Гарантируем, что ответ всегда отправляется
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Неизвестная ошибка' });
-    }
   }
 });
 
