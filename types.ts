@@ -3,8 +3,9 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'user' | 'кассир' | 'менеджер' | 'кладовщик' | 'управляющий';
+  role: 'admin' | 'user' | 'кассир' | 'менеджер' | 'кладовщик' | 'управляющий' | 'client';
   ownerId?: string;
+  permissions?: any;
 }
 
 export interface Product {
@@ -35,6 +36,22 @@ export interface Customer {
   address?: string;
   discount?: number;
   debt: number;
+  login?: string;
+  password?: string;
+}
+
+export interface Order {
+  id: string;
+  customerId: string;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    price: number;
+  }>;
+  total: number;
+  status: 'NEW' | 'CONFIRMED' | 'CANCELLED';
+  date: string;
+  note?: string;
 }
 
 export interface Employee {
@@ -121,4 +138,6 @@ export type AppView =
   | 'PROFILE'
   | 'SETTINGS'
   | 'MORE_MENU'
-  | 'TENANT_ADMIN'; // Вид для суперадмина
+  | 'TENANT_ADMIN'
+  | 'CLIENT_PORTAL'
+  | 'ORDERS_MANAGER';

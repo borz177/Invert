@@ -92,7 +92,6 @@ app.post('/api/auth/update-profile', async (req, res) => {
     if (userResult.rows.length === 0) return res.status(404).json({ error: 'User not found' });
     const user = userResult.rows[0];
 
-    // Если меняется пароль
     let newHash = user.password_hash;
     if (newPassword) {
       const isValid = await bcrypt.compare(currentPassword, user.password_hash);
@@ -106,7 +105,6 @@ app.post('/api/auth/update-profile', async (req, res) => {
     );
 
     const resultUser = updated.rows[0];
-    // Важно: возвращаем ownerId для админа
     if (resultUser.role === 'admin') {
       resultUser.ownerId = resultUser.id;
     }
@@ -117,16 +115,11 @@ app.post('/api/auth/update-profile', async (req, res) => {
   }
 });
 
-const ARRAY_KEYS = [
-  'products', 'transactions', 'sales', 'cashEntries',
-  'suppliers', 'customers', 'employees', 'categories',
-  'posCart', 'warehouseBatch'
-];
-
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
     const cleanEmail = email.toLowerCase().trim();
+    // 1. Проверка владельцев
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
     if (result.rows.length > 0) {
       const user = result.rows[0];
@@ -136,20 +129,41 @@ app.post('/api/auth/login', async (req, res) => {
         return res.json({ ...safeUser, ownerId: safeUser.id });
       }
     }
-    // Проверка сотрудников (в app_store)
-    const empData = await pool.query("SELECT user_id, data FROM app_store WHERE key = 'employees'");
-    for (const row of empData.rows) {
+
+    // 2. Проверка сотрудников и клиентов (в app_store)
+    const storeData = await pool.query("SELECT user_id, key, data FROM app_store WHERE key IN ('employees', 'customers')");
+
+    // Сначала ищем среди сотрудников
+    const employeesRows = storeData.rows.filter(r => r.key === 'employees');
+    for (const row of employeesRows) {
       const employees = Array.isArray(row.data) ? row.data : [];
       const employee = employees.find(e => e.login === email && e.password === password);
       if (employee) {
         return res.json({ id: employee.id, email: employee.login, name: employee.name, role: employee.role, ownerId: row.user_id, permissions: employee.permissions });
       }
     }
+
+    // Затем ищем среди клиентов
+    const customersRows = storeData.rows.filter(r => r.key === 'customers');
+    for (const row of customersRows) {
+      const customers = Array.isArray(row.data) ? row.data : [];
+      const customer = customers.find(c => c.login === email && c.password === password);
+      if (customer) {
+        return res.json({ id: customer.id, email: customer.login || customer.email, name: customer.name, role: 'client', ownerId: row.user_id });
+      }
+    }
+
     return res.status(401).json({ error: 'Неверный логин или пароль' });
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
+
+const ARRAY_KEYS = [
+  'products', 'transactions', 'sales', 'cashEntries',
+  'suppliers', 'customers', 'employees', 'categories',
+  'posCart', 'warehouseBatch', 'orders'
+];
 
 app.post('/api/data', async (req, res) => {
   const { key, user_id } = req.body;

@@ -9,16 +9,16 @@ interface DashboardProps {
   customers: Customer[];
   suppliers: Supplier[];
   onNavigate: (view: string) => void;
+  orderCount?: number;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, customers, suppliers, onNavigate }) => {
+const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, customers, suppliers, onNavigate, orderCount = 0 }) => {
   const [activeModal, setActiveModal] = useState<'SALES_DETAIL' | 'DEBT_CLIENTS' | 'DEBT_SUPPLIERS' | null>(null);
 
   const today = new Date().toISOString().split('T')[0];
   const todaySales = sales.filter(s => s.date.startsWith(today) && !s.isDeleted);
   const totalSalesToday = todaySales.reduce((acc, s) => acc + s.total, 0);
 
-  // Расчет прибыли за сегодня
   const totalProfitToday = todaySales.reduce((acc, sale) => {
     const saleProfit = sale.items.reduce((pAcc, item) => pAcc + (item.price - item.cost) * item.quantity, 0);
     return acc + saleProfit;
@@ -29,7 +29,6 @@ const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, cus
   const totalDebtFromClients = customers.reduce((acc, c) => acc + (c.debt || 0), 0);
   const totalDebtToSuppliers = suppliers.reduce((acc, s) => acc + (s.debt || 0), 0);
 
-  // Группировка проданных товаров за сегодня
   const soldProductsToday = todaySales.reduce((acc: any[], sale) => {
     sale.items.forEach(item => {
       const existing = acc.find(x => x.productId === item.productId);
@@ -59,8 +58,23 @@ const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, cus
         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</p>
       </div>
 
+      {orderCount > 0 && (
+        <button
+          onClick={() => onNavigate('ORDERS_MANAGER')}
+          className="w-full bg-indigo-600 p-6 rounded-[32px] shadow-lg shadow-indigo-200 flex items-center justify-between text-white animate-pulse"
+        >
+          <div className="flex items-center gap-4">
+            <div className="bg-white/20 p-3 rounded-2xl"><i className="fas fa-bell fa-lg"></i></div>
+            <div className="text-left">
+              <p className="text-[10px] font-black uppercase opacity-70">Внимание</p>
+              <p className="text-lg font-black">У вас {orderCount} новых заказов!</p>
+            </div>
+          </div>
+          <i className="fas fa-chevron-right"></i>
+        </button>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* Продажи сегодня */}
         <button
           onClick={() => setActiveModal('SALES_DETAIL')}
           className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 flex items-center space-x-4 text-left active:scale-95 transition-all"
@@ -72,7 +86,6 @@ const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, cus
           </div>
         </button>
 
-        {/* В кассе */}
         <button
           onClick={() => onNavigate('CASHBOX')}
           className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 flex items-center space-x-4 text-left active:scale-95 transition-all"
@@ -84,7 +97,6 @@ const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, cus
           </div>
         </button>
 
-        {/* Нам должны */}
         <button
           onClick={() => setActiveModal('DEBT_CLIENTS')}
           className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 flex items-center space-x-4 text-left active:scale-95 transition-all"
@@ -96,7 +108,6 @@ const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, cus
           </div>
         </button>
 
-        {/* Мы должны */}
         <button
           onClick={() => setActiveModal('DEBT_SUPPLIERS')}
           className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 flex items-center space-x-4 text-left active:scale-95 transition-all"
@@ -108,7 +119,6 @@ const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, cus
           </div>
         </button>
 
-        {/* Мало на складе */}
         <button
           onClick={() => onNavigate('STOCK_REPORT')}
           className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 flex items-center space-x-4 text-left active:scale-95 transition-all"
@@ -150,7 +160,6 @@ const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, cus
         </div>
       </div>
 
-      {/* Модальные окна обзора */}
       {activeModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setActiveModal(null)}>
           <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[40px] shadow-2xl p-6 flex flex-col max-h-[90vh] animate-slide-up overflow-hidden" onClick={e => e.stopPropagation()}>

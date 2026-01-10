@@ -99,9 +99,10 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
                 {c.name[0]}
               </div>
               <div>
-                <h4 className="font-bold text-slate-800">{c.name}</h4>
+                <h4 className="font-bold text-slate-800 leading-tight">{c.name}</h4>
                 <p className="text-xs text-slate-400">{c.phone || '---'}</p>
                 {c.debt > 0 && <p className="text-[10px] font-black text-red-500 uppercase mt-1">Долг: {c.debt.toLocaleString()} ₽</p>}
+                {c.login && <p className="text-[8px] font-black text-indigo-400 uppercase mt-0.5">Личный кабинет: {c.login}</p>}
               </div>
             </div>
 
@@ -120,14 +121,23 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
 
       {showAdd && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
-          <form onSubmit={handleSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-w-sm space-y-5 animate-fade-in">
+          <form onSubmit={handleSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-w-sm space-y-5 animate-fade-in max-h-[90vh] overflow-y-auto no-scrollbar">
             <h3 className="text-xl font-black text-slate-800 text-center">{editingClient ? 'Изменить клиента' : 'Новый клиент'}</h3>
             <div className="space-y-4">
-              <input required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Имя..." value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
-              <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Телефон..." value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} />
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Основное</label>
+                <input required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Имя..." value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
+                <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Телефон..." value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} />
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Скидка %" value={formData.discount || ''} onChange={e => setFormData({...formData, discount: parseInt(e.target.value) || 0})} />
                 <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Email" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
+              </div>
+
+              <div className="p-4 bg-indigo-50 rounded-3xl space-y-3">
+                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center">Доступ в личный кабинет</p>
+                <input className="w-full p-3 bg-white border border-indigo-100 rounded-xl text-xs font-bold" placeholder="Логин для входа" value={formData.login || ''} onChange={e => setFormData({...formData, login: e.target.value})} />
+                <input className="w-full p-3 bg-white border border-indigo-100 rounded-xl text-xs font-bold" placeholder="Пароль" value={formData.password || ''} onChange={e => setFormData({...formData, password: e.target.value})} />
               </div>
             </div>
             <div className="flex gap-3">
