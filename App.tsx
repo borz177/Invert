@@ -49,7 +49,6 @@ const App: React.FC = () => {
 
   const isDataLoaded = useRef(false);
 
-  // Права: Владелец (нет ownerId), Админ или Управляющий
   const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'управляющий' || !currentUser?.ownerId;
 
   const fetchAllData = async (silent = false) => {
@@ -157,11 +156,31 @@ const App: React.FC = () => {
     window.location.reload();
   };
 
+  const addCashEntry = (entry: Omit<CashEntry, 'id' | 'date' | 'employeeId'>) => {
+    if (!currentUser) return;
+    const newEntry: CashEntry = {
+      ...entry,
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      employeeId: currentUser.id
+    };
+    setCashEntries([newEntry, ...cashEntries]);
+  };
+
   const renderView = () => {
     if (!currentUser) return null;
 
     switch (view) {
-      case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} />;
+      case 'DASHBOARD': return (
+        <Dashboard
+          products={products}
+          sales={sales}
+          cashEntries={cashEntries}
+          customers={customers}
+          suppliers={suppliers}
+          onNavigate={(v) => setView(v as AppView)}
+        />
+      );
       case 'PRODUCTS': return (
         <ProductList
           products={products} categories={categories}
@@ -186,6 +205,7 @@ const App: React.FC = () => {
           batch={warehouseBatch} setBatch={setWarehouseBatch}
           onTransaction={t => setTransactions([{...t, employeeId: currentUser.id}, ...transactions])}
           onTransactionsBulk={ts => setTransactions([...ts.map(t => ({...t, employeeId: currentUser.id})), ...transactions])}
+          onAddCashEntry={addCashEntry}
         />
       );
       case 'SALES': return (
@@ -227,7 +247,7 @@ const App: React.FC = () => {
         />
       );
       case 'EMPLOYEES':
-        if (!isAdminOrManager) return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} />;
+        if (!isAdminOrManager) return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={(v) => setView(v as AppView)} />;
         return (
           <Employees
             employees={employees} sales={sales}
@@ -268,7 +288,7 @@ const App: React.FC = () => {
           </div>
         </div>
       );
-      default: return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} />;
+      default: return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={(v) => setView(v as AppView)} />;
     }
   };
 

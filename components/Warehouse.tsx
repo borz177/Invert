@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Product, Transaction, Supplier } from '../types';
+import { Product, Transaction, Supplier, CashEntry } from '../types';
 
 interface WarehouseProps {
   products: Product[];
@@ -10,9 +10,10 @@ interface WarehouseProps {
   setBatch: React.Dispatch<React.SetStateAction<Array<{productId: string, name: string, quantity: number, cost: number}>>>;
   onTransaction: (t: Transaction) => void;
   onTransactionsBulk: (ts: Transaction[]) => void;
+  onAddCashEntry?: (entry: Omit<CashEntry, 'id' | 'date' | 'employeeId'>) => void;
 }
 
-const Warehouse: React.FC<WarehouseProps> = ({ products, suppliers, transactions, batch, setBatch, onTransaction, onTransactionsBulk }) => {
+const Warehouse: React.FC<WarehouseProps> = ({ products, suppliers, transactions, batch, setBatch, onTransaction, onTransactionsBulk, onAddCashEntry }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedProduct, setSelectedProduct] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState('');
@@ -20,7 +21,6 @@ const Warehouse: React.FC<WarehouseProps> = ({ products, suppliers, transactions
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState('');
 
-  // Автоматический выбор поставщика с именем "Поставщик"
   useEffect(() => {
     if (suppliers.length > 0 && !selectedSupplier) {
       const defaultSupplier = suppliers.find(s => s.name.toLowerCase() === 'поставщик');
@@ -62,6 +62,9 @@ const Warehouse: React.FC<WarehouseProps> = ({ products, suppliers, transactions
     if (batch.length === 0) return;
     if (!selectedSupplier) { alert('Пожалуйста, выберите поставщика!'); return; }
 
+    const supplier = suppliers.find(s => s.id === selectedSupplier);
+    const totalBatchAmount = batch.reduce((acc, b) => acc + (b.quantity * b.cost), 0);
+
     const ts: Transaction[] = batch.map(b => ({
       id: Math.random().toString(36).substr(2, 9),
       productId: b.productId,
@@ -71,12 +74,24 @@ const Warehouse: React.FC<WarehouseProps> = ({ products, suppliers, transactions
       pricePerUnit: b.cost,
       paymentMethod: paymentMethod,
       date: new Date().toISOString(),
-      note: note || `Приход: ${suppliers.find(s => s.id === selectedSupplier)?.name}`,
+      note: note || `Приход: ${supplier?.name}`,
       employeeId: ''
     }));
 
+    // Автоматический расход из кассы при оплате налом
+    if (paymentMethod === 'CASH' && onAddCashEntry) {
+      onAddCashEntry({
+        amount: totalBatchAmount,
+        type: 'EXPENSE',
+        category: 'Закуп товара',
+        description: `Оплата прихода от ${supplier?.name}`,
+        supplierId: selectedSupplier
+      });
+    }
+
     onTransactionsBulk(ts);
     setNote('');
+    setBatch([]);
     alert('Все товары приняты на склад!');
   };
 
