@@ -63,7 +63,6 @@ export const db = {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        // ИСПРАВЛЕНО: user_id вместо ownerId
         body: JSON.stringify({ key, user_id: targetOwnerId })
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -76,7 +75,7 @@ export const db = {
     }
   },
 
-  async saveData(key: string,  any) {
+  async saveData(key: string, data: any) { // ← ИСПРАВЛЕНО: добавлено имя параметра
     const userJson = localStorage.getItem('currentUser');
     if (!userJson) return false;
     const user: User & { ownerId?: string } = JSON.parse(userJson);
@@ -88,7 +87,6 @@ export const db = {
       const response = await fetchWithTimeout(`${API_BASE}/data/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // ИСПРАВЛЕНО: user_id вместо ownerId
         body: JSON.stringify({ key, data, user_id: targetOwnerId })
       });
       return response.ok;
