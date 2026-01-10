@@ -14,12 +14,13 @@ interface AllOperationsProps {
   onDeleteCashEntry: (id: string) => void;
   ownerId?: string;
   ownerName?: string;
+  canDelete?: boolean;
 }
 
 const AllOperations: React.FC<AllOperationsProps> = ({
   sales, transactions, cashEntries, products, employees,
   onUpdateTransaction, onDeleteTransaction, onDeleteSale, onDeleteCashEntry,
-  ownerId, ownerName
+  ownerId, ownerName, canDelete = false
 }) => {
   const [filter, setFilter] = useState<'ALL' | 'SALES' | 'STOCK' | 'CASH'>('ALL');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -28,15 +29,11 @@ const AllOperations: React.FC<AllOperationsProps> = ({
 
   const getEmployeeName = (id: string) => {
     if (!id) return '---';
-    // Проверка на владельца
     if (id === 'admin' || id === ownerId || id === '00000000-0000-0000-0000-000000000000') {
       return ownerName || 'Владелец';
     }
-    // Поиск среди сотрудников
     const emp = employees.find(e => e.id === id);
     if (emp) return emp.name;
-
-    // Если текущий ID не совпадает с владельцем и не в списке сотрудников, пробуем сравнить с ownerId напрямую
     return id === ownerId ? (ownerName || 'Владелец') : 'Сотрудник';
   };
 
@@ -180,7 +177,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
                 </p>
               </div>
 
-              {!op.isDeleted ? (
+              {!op.isDeleted && canDelete ? (
                 <div className="relative">
                   <button
                     onClick={(e) => {
@@ -213,7 +210,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
                 </div>
               ) : (
                 <div className="w-10 flex justify-center">
-                  <span className="text-[7px] font-black text-red-400 border border-red-100 px-1 py-0.5 rounded uppercase leading-none text-center">DEL</span>
+                  {!op.isDeleted && !canDelete ? null : <span className="text-[7px] font-black text-red-400 border border-red-100 px-1 py-0.5 rounded uppercase leading-none text-center">DEL</span>}
                 </div>
               )}
             </div>
