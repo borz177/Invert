@@ -54,16 +54,17 @@ export const db = {
     const userJson = localStorage.getItem('currentUser');
     if (!userJson) return null;
     const user: User & { ownerId?: string } = JSON.parse(userJson);
-    const targetOwnerId = user.ownerId || user.id; // ← лучше называть ownerId
+    const targetOwnerId = user.ownerId || user.id;
 
     try {
       const response = await fetchWithTimeout(`${API_BASE}/data`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json' 
+          'Accept': 'application/json'
         },
-        body: JSON.stringify({ key, ownerId: targetOwnerId }) // ← ИСПРАВЛЕНО
+        // ИСПРАВЛЕНО: user_id вместо ownerId
+        body: JSON.stringify({ key, user_id: targetOwnerId })
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
@@ -75,7 +76,7 @@ export const db = {
     }
   },
 
-  async saveData(key: string, data: any) {
+  async saveData(key: string,  any) {
     const userJson = localStorage.getItem('currentUser');
     if (!userJson) return false;
     const user: User & { ownerId?: string } = JSON.parse(userJson);
@@ -87,7 +88,8 @@ export const db = {
       const response = await fetchWithTimeout(`${API_BASE}/data/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, data, ownerId: targetOwnerId }) // ← ИСПРАВЛЕНО
+        // ИСПРАВЛЕНО: user_id вместо ownerId
+        body: JSON.stringify({ key, data, user_id: targetOwnerId })
       });
       return response.ok;
     } catch (e) {

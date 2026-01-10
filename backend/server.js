@@ -23,7 +23,7 @@ const pool = new Pool({
 });
 
 // Создаём хеш для admin123
-const ADMIN_PASSWORD_HASH = '$2b$10$XyZ123abcDEF456ghiJKL789mnoPQRstuvWXYZ0123456789ABCD'; // ← замените на ваш хеш
+const ADMIN_PASSWORD_HASH = '$2b$10$1NgDQeIO5JKmoB3J4APQBuCMmdX7JpyTuSWt8XHI4TULdcgydnldu'; // ← замените на ваш хеш
 
 // Инициализация админа
 const initAdmin = async () => {
@@ -114,24 +114,25 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Получение данных
 app.post('/api/data', async (req, res) => {
-  const { key, ownerId } = req.body;
-  if (!key || !ownerId) return res.status(400).json({ error: 'Missing key or ownerId' });
+  const { key, user_id } = req.body; // ← ИЗМЕНЕНО НА user_id
+  if (!key || !user_id) return res.status(400).json({ error: 'Missing key or user_id' });
 
   try {
     const result = await pool.query(
       'SELECT data FROM app_store WHERE owner_id = $1 AND key = $2',
-      [ownerId, key]
+      [user_id, key] // ← Передаём user_id как owner_id в БД
     );
     res.json(result.rows[0]?.data || []);
   } catch (err) {
+    console.error('Ошибка получения данных:', err);
     res.status(500).json({ error: 'Ошибка БД' });
   }
 });
 
 // Сохранение данных
 app.post('/api/data/save', async (req, res) => {
-  const { key, data, ownerId } = req.body;
-  if (!key || !ownerId) return res.status(400).json({ error: 'Missing key or ownerId' });
+  const { key, data, user_id } = req.body; // ← ИЗМЕНЕНО НА user_id
+  if (!key || !user_id) return res.status(400).json({ error: 'Missing key or user_id' });
 
   try {
     await pool.query(
@@ -139,18 +140,19 @@ app.post('/api/data/save', async (req, res) => {
        VALUES ($1, $2, $3::jsonb)
        ON CONFLICT (owner_id, key) 
        DO UPDATE SET data = $3::jsonb, updated_at = NOW()`,
-      [ownerId, key, data]
+      [user_id, key, data] // ← Передаём user_id как owner_id в БД
     );
     res.sendStatus(200);
   } catch (err) {
+    console.error('Ошибка сохранения данных:', err);
     res.status(500).json({ error: 'Ошибка БД' });
   }
 });
 
 // Создание сотрудника (только для владельца)
 app.post('/api/employees', async (req, res) => {
-  const { ownerId, login, password, name, role, permissions } = req.body;
-  if (!ownerId || !login || !password || !name) {
+  const { user_id, login, password, name, role, permissions } = req.body; // ← ИЗМЕНЕНО НА user_id
+  if (!user_id || !login || !password || !name) {
     return res.status(400).json({ error: 'Все поля обязательны' });
   }
 
@@ -159,13 +161,14 @@ app.post('/api/employees', async (req, res) => {
     const result = await pool.query(
       `INSERT INTO employees (owner_id, login, password_hash, name, role, permissions)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, login, name, role, permissions`,
-      [ownerId, login, hashedPassword, name, role || 'seller', JSON.stringify(permissions || {})]
+      [user_id, login, hashedPassword, name, role || 'seller', JSON.stringify(permissions || {})]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Сотрудник с таким логином уже существует' });
     }
+    console.error('Ошибка создания сотрудника:', err);
     res.status(500).json({ error: 'Ошибка создания сотрудника' });
   }
 });
