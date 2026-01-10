@@ -114,17 +114,19 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Получение данных
 app.post('/api/data', async (req, res) => {
-  const { key, user_id } = req.body; // ← ИЗМЕНЕНО НА user_id
+  console.log('📥 Получен запрос на чтение:', req.body); // ← ДОБАВЬТЕ ЭТО
+
+  const { key, user_id } = req.body;
   if (!key || !user_id) return res.status(400).json({ error: 'Missing key or user_id' });
 
   try {
     const result = await pool.query(
       'SELECT data FROM app_store WHERE owner_id = $1 AND key = $2',
-      [user_id, key] // ← Передаём user_id как owner_id в БД
+      [user_id, key]
     );
     res.json(result.rows[0]?.data || []);
   } catch (err) {
-    console.error('Ошибка получения данных:', err);
+    console.error('💥 Ошибка получения данных:', err);
     res.status(500).json({ error: 'Ошибка БД' });
   }
 });
