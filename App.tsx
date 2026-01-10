@@ -124,28 +124,41 @@ const App: React.FC = () => {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!isDataLoaded.current || isLoading || !isAuthenticated) return;
+  if (!isDataLoaded.current || isLoading || !isAuthenticated) return;
 
-    const timer = setTimeout(() => {
-      setSyncStatus('SYNCING');
-      Promise.all([
-        db.saveData('products', products),
-        db.saveData('transactions', transactions),
-        db.saveData('sales', sales),
-        db.saveData('cashEntries', cashEntries),
-        db.saveData('suppliers', suppliers),
-        db.saveData('customers', customers),
-        db.saveData('employees', employees),
-        db.saveData('categories', categories),
-        db.saveData('settings', settings),
-        db.saveData('posCart', posCart),
-        db.saveData('warehouseBatch', warehouseBatch)
-      ]).then(results => {
-        setSyncStatus(results.every(r => r) ? 'IDLE' : 'ERROR');
-      });
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch]);
+  const timer = setTimeout(() => {
+    setSyncStatus('SYNCING');
+
+    // Добавьте проверку типа
+    const safeProducts = Array.isArray(products) ? products : [];
+    const safeTransactions = Array.isArray(transactions) ? transactions : [];
+    const safeSales = Array.isArray(sales) ? sales : [];
+    const safeCashEntries = Array.isArray(cashEntries) ? cashEntries : [];
+    const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
+    const safeCustomers = Array.isArray(customers) ? customers : [];
+    const safeEmployees = Array.isArray(employees) ? employees : [];
+    const safeCategories = Array.isArray(categories) ? categories : INITIAL_CATEGORIES;
+    const safePosCart = Array.isArray(posCart) ? posCart : [];
+    const safeWarehouseBatch = Array.isArray(warehouseBatch) ? warehouseBatch : [];
+
+    Promise.all([
+      db.saveData('products', safeProducts),
+      db.saveData('transactions', safeTransactions),
+      db.saveData('sales', safeSales),
+      db.saveData('cashEntries', safeCashEntries),
+      db.saveData('suppliers', safeSuppliers),
+      db.saveData('customers', safeCustomers),
+      db.saveData('employees', safeEmployees),
+      db.saveData('categories', safeCategories),
+      db.saveData('settings', settings),
+      db.saveData('posCart', safePosCart),
+      db.saveData('warehouseBatch', safeWarehouseBatch)
+    ]).then(results => {
+      setSyncStatus(results.every(r => r) ? 'IDLE' : 'ERROR');
+    });
+  }, 2000);
+  return () => clearTimeout(timer);
+}, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch]);
 
   const handleLogin = (user: User) => {
     setIsAuthenticated(true);
