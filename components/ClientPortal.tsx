@@ -16,6 +16,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, products, sales, orde
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<any[]>([]);
   const [isOrdering, setIsOrdering] = useState(false);
+  const [note, setNote] = useState('');
   const [selectedDetail, setSelectedDetail] = useState<{ type: 'INVOICE' | 'ORDER', item: any } | null>(null);
 
   const mySales = useMemo(() => {
@@ -55,10 +56,12 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, products, sales, orde
       items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, price: i.price })),
       total: totalCart,
       status: 'NEW',
-      date: new Date().toISOString()
+      date: new Date().toISOString(),
+      note: note.trim() || undefined
     };
     onAddOrder(newOrder);
     setCart([]);
+    setNote('');
     setIsOrdering(false);
     alert('Ваш заказ успешно отправлен! Ожидайте подтверждения менеджером.');
   };
@@ -165,19 +168,31 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, products, sales, orde
                   <button onClick={() => setIsOrdering(false)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times"></i></button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar pb-6">
-                  {cart.map(item => (
-                    <div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-slate-800 text-sm">{item.name}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit} x {item.price.toLocaleString()} ₽</p>
+                <div className="flex-1 overflow-y-auto space-y-6 no-scrollbar pb-6 pr-1">
+                  <div className="space-y-3">
+                    {cart.map(item => (
+                      <div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div>
+                          <p className="font-bold text-slate-800 text-sm">{item.name}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit} x {item.price.toLocaleString()} ₽</p>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <p className="font-black text-slate-800">{(item.quantity * item.price).toLocaleString()} ₽</p>
+                          <button onClick={() => removeFromCart(item.productId)} className="text-red-300 hover:text-red-500"><i className="fas fa-trash"></i></button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <p className="font-black text-slate-800">{(item.quantity * item.price).toLocaleString()} ₽</p>
-                        <button onClick={() => removeFromCart(item.productId)} className="text-red-300 hover:text-red-500"><i className="fas fa-trash"></i></button>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Комментарий к заказу</label>
+                    <textarea
+                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm resize-none h-24 focus:ring-2 focus:ring-indigo-500/10"
+                      placeholder="Напр: Доставить до двери, позвонить за час..."
+                      value={note}
+                      onChange={e => setNote(e.target.value)}
+                    />
+                  </div>
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 space-y-4">
@@ -260,21 +275,30 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, products, sales, orde
               <button onClick={() => setSelectedDetail(null)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times"></i></button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar pb-6">
-              {selectedDetail.item.items.map((it: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <div className="flex items-center gap-3">
-                    {products.find(p => p.id === it.productId)?.image && (
-                      <img src={products.find(p => p.id === it.productId)?.image} className="w-10 h-10 rounded-lg object-cover" />
-                    )}
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm">{getProductName(it.productId)}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">{it.quantity} {getProductUnit(it.productId)} x {it.price.toLocaleString()} ₽</p>
+            <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-6 pr-1">
+              <div className="space-y-3">
+                {selectedDetail.item.items.map((it: any, idx: number) => (
+                  <div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex items-center gap-3">
+                      {products.find(p => p.id === it.productId)?.image && (
+                        <img src={products.find(p => p.id === it.productId)?.image} className="w-10 h-10 rounded-lg object-cover" />
+                      )}
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm">{getProductName(it.productId)}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">{it.quantity} {getProductUnit(it.productId)} x {it.price.toLocaleString()} ₽</p>
+                      </div>
                     </div>
+                    <p className="font-black text-slate-800">{(it.quantity * it.price).toLocaleString()} ₽</p>
                   </div>
-                  <p className="font-black text-slate-800">{(it.quantity * it.price).toLocaleString()} ₽</p>
+                ))}
+              </div>
+
+              {selectedDetail.item.note && (
+                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100">
+                   <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-1">Ваш комментарий</p>
+                   <p className="text-xs text-amber-800 font-medium">{selectedDetail.item.note}</p>
                 </div>
-              ))}
+              )}
             </div>
 
             <div className="pt-4 border-t border-slate-100">
