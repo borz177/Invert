@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Customer, Sale, CashEntry } from '../types';
 
 interface ClientsProps {
@@ -13,25 +13,24 @@ interface ClientsProps {
 
 const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd, onUpdate, onDelete }) => {
   const [showAdd, setShowAdd] = useState(false);
-  const [editingClient, setEditingClient] = useState<Customer | null>(null);
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [viewHistoryId, setViewHistoryId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<Partial<Customer>>({});
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [formData, setFormData] = useState<Partial<Customer>>({});
 
+  // Обработка сохранения клиента (новый или редактируемый)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.name) {
-      if (editingClient) {
-        onUpdate({ ...editingClient, ...formData } as Customer);
+      if (editingCustomer) {
+        onUpdate({ ...editingCustomer, ...formData } as Customer);
       } else {
         onAdd({
           ...formData as Customer,
-          id: Date.now().toString(),
-          phone: formData.phone || '',
-          discount: formData.discount || 0,
-          debt: 0
+          id: `CUST-${Date.now()}`,
+          debt: formData.debt || 0,
+          discount: formData.discount || 0
         });
       }
       closeModal();
@@ -40,112 +39,142 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
 
   const closeModal = () => {
     setShowAdd(false);
-    setEditingClient(null);
+    setEditingCustomer(null);
     setFormData({});
     setActiveMenuId(null);
   };
 
   const openEdit = (c: Customer) => {
-    setEditingClient(c);
+    setEditingCustomer(c);
     setFormData(c);
     setShowAdd(true);
     setActiveMenuId(null);
   };
 
-  const filtered = customers.filter(c =>
+  // Фильтрация списка клиентов по поисковому запросу
+  const filteredCustomers = customers.filter(c =>
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.phone.includes(searchTerm) ||
-    (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()))
+    (c.phone && c.phone.includes(searchTerm))
   );
 
-  const getClientHistory = (clientId: string) => {
-    const clientSales = sales.filter(s => s.customerId === clientId).map(s => ({
-      id: s.id,
-      date: s.date,
-      type: 'SALE',
-      title: `Покупка №${s.id.slice(-4)}`,
-      amount: s.total,
-      isDebt: s.paymentMethod === 'DEBT'
-    }));
+  // Сбор истории операций для конкретного клиента (продажи и платежи)
+  const combinedHistory = useMemo(() => {
+    if (!viewHistoryId) return [];
 
-    const clientPayments = cashEntries.filter(e => e.customerId === clientId && e.type === 'INCOME').map(e => ({
-      id: e.id,
-      date: e.date,
-      type: 'PAYMENT',
-      title: 'Оплата долга',
-      amount: e.amount,
-      isDebt: false
-    }));
+    const salesHistory = sales
+      .filter(s => s.customerId === viewHistoryId && !s.isDeleted)
+      .map(s => ({
+        id: s.id,
+        date: s.date,
+        type: 'SALE' as const,
+        amount: s.total,
+        title: `Продажа №${s.id.slice(-4)}`,
+        subtitle: `${s.items.length} поз. • ${s.paymentMethod === 'DEBT' ? 'В долг' : 'Оплачено'}`,
+        isNegative: s.paymentMethod === 'DEBT'
+      }));
 
-    return [...clientSales, ...clientPayments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  };
+    const paymentHistory = cashEntries
+      .filter(e => e.customerId === viewHistoryId && e.type === 'INCOME')
+      .map(e => ({
+        id: e.id,
+        date: e.date,
+        type: 'PAYMENT' as const,
+        amount: e.amount,
+        title: 'Оплата от клиента',
+        subtitle: e.description || 'В кассу',
+        isNegative: false
+      }));
+
+    return [...salesHistory, ...paymentHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [viewHistoryId, sales, cashEntries]);
 
   return (
     <div className="space-y-6 pb-20" onClick={() => setActiveMenuId(null)}>
       <div className="flex justify-between items-center px-1">
-        <h2 className="text-2xl font-black text-slate-800">Клиенты</h2>
-        <button onClick={(e) => { e.stopPropagation(); setShowAdd(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold shadow-sm">+ Добавить</button>
+        <h2 className="text-2xl font-bold text-slate-800">Клиенты</h2>
+        <button onClick={(e) => { e.stopPropagation(); setShowAdd(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold shadow-sm">
+          + Добавить
+        </button>
       </div>
 
       <div className="relative">
         <i className="fas fa-search absolute left-4 top-4 text-slate-400"></i>
-        <input className="w-full p-4 pl-12 rounded-2xl border border-slate-200 bg-white shadow-sm outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all" placeholder="Поиск по имени, тел или email..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+        <input
+          className="w-full p-4 pl-12 rounded-2xl border border-slate-200 bg-white shadow-sm outline-none"
+          placeholder="Поиск по имени или телефону..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+        />
       </div>
 
       <div className="grid gap-3">
-        {filtered.map(c => (
-          <div key={c.id} className="bg-white p-5 rounded-[32px] shadow-sm border border-slate-100 flex justify-between items-center relative transition-all hover:border-indigo-200">
+        {filteredCustomers.map(c => (
+          <div key={c.id} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex justify-between items-center relative transition-all hover:border-indigo-200">
             <div className="flex items-center space-x-4">
-              <div className={`w-14 h-14 ${Number(c.debt) > 0 ? 'bg-red-50 text-red-500' : 'bg-emerald-50 text-emerald-600'} rounded-[20px] flex items-center justify-center font-black text-xl shadow-inner`}>
+              <div className={`w-12 h-12 ${c.debt > 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'} rounded-2xl flex items-center justify-center font-bold text-xl`}>
                 {c.name[0]}
               </div>
               <div>
-                <h4 className="font-black text-slate-800 leading-tight">{c.name}</h4>
-                <p className="text-[10px] text-slate-400 font-bold uppercase">{c.phone || '---'}</p>
-                {c.email && <p className="text-[9px] text-indigo-400 font-black uppercase mt-0.5">{c.email}</p>}
-                {Number(c.debt) > 0 && (
-                  <div className="mt-1.5 bg-red-50 px-2 py-0.5 rounded-lg border border-red-100 inline-block">
-                    <p className="text-[10px] font-black text-red-600 uppercase">Долг: {Number(c.debt).toLocaleString()} ₽</p>
-                  </div>
-                )}
-                {Number(c.debt) <= 0 && <p className="text-[9px] font-black text-emerald-600 uppercase mt-1">Долгов нет</p>}
+                <h4 className="font-bold text-slate-800 leading-tight">{c.name}</h4>
+                <p className="text-xs text-slate-400">{c.phone || 'Без телефона'}</p>
+                <div className="flex gap-2 mt-1">
+                  {c.debt > 0 && (
+                    <span className="text-[10px] font-black text-red-500 uppercase">
+                      Долг: {c.debt.toLocaleString()} ₽
+                    </span>
+                  )}
+                  {c.discount > 0 && (
+                    <span className="text-[10px] font-black text-indigo-500 uppercase">
+                      Скидка: {c.discount}%
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {Number(c.debt) > 0 && <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>}
-              <button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === c.id ? null : c.id); }} className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-50 text-slate-400"><i className="fas fa-ellipsis-v text-sm"></i></button>
-            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === c.id ? null : c.id); }}
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-50 text-slate-400"
+            >
+              <i className="fas fa-ellipsis-v text-sm"></i>
+            </button>
 
             {activeMenuId === c.id && (
-              <div className="absolute top-12 right-0 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 w-48 z-20 animate-fade-in">
-                <button onClick={() => { setViewHistoryId(c.id); setActiveMenuId(null); }} className="w-full px-4 py-3 text-left text-xs font-black text-slate-600 hover:bg-slate-50 flex items-center gap-3"><i className="fas fa-history text-indigo-400 text-[10px]"></i> История</button>
-                <button onClick={() => openEdit(c)} className="w-full px-4 py-3 text-left text-xs font-black text-slate-600 hover:bg-slate-50 flex items-center gap-3"><i className="fas fa-pen text-indigo-400 text-[10px]"></i> Изменить</button>
-                <button onClick={() => setConfirmDeleteId(c.id)} className="w-full px-4 py-3 text-left text-xs font-black text-red-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-50 mt-1"><i className="fas fa-trash text-[10px]"></i> Удалить</button>
+              <div className="absolute top-12 right-0 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 w-52 z-20 animate-fade-in">
+                <button onClick={() => { setViewHistoryId(c.id); setActiveMenuId(null); }} className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2">
+                  <i className="fas fa-history text-indigo-400"></i> История / Долг
+                </button>
+                <button onClick={() => openEdit(c)} className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2">
+                  <i className="fas fa-pen text-indigo-400"></i> Изменить
+                </button>
+                <button onClick={() => onDelete(c.id)} className="w-full px-4 py-2.5 text-left text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-2 border-t border-slate-50 mt-1">
+                  <i className="fas fa-trash"></i> Удалить
+                </button>
               </div>
             )}
           </div>
         ))}
-        {filtered.length === 0 && <div className="py-20 text-center text-slate-300 italic">Клиенты не найдены</div>}
       </div>
 
       {showAdd && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <form onSubmit={handleSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-w-sm space-y-5 animate-fade-in">
-            <h3 className="text-xl font-black text-slate-800 text-center">{editingClient ? 'Изменить клиента' : 'Новый клиент'}</h3>
+            <h3 className="text-xl font-black text-slate-800 text-center">{editingCustomer ? 'Изменить клиента' : 'Новый клиент'}</h3>
             <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Основное</label>
-                <input required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Имя..." value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
-                <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Телефон..." value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} />
-              </div>
+              <input required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Имя клиента..." value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
+              <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Телефон..." value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} />
               <div className="grid grid-cols-2 gap-4">
-                <input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Скидка %" value={formData.discount || ''} onChange={e => setFormData({...formData, discount: parseInt(e.target.value) || 0})} />
-                <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Email" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Скидка %</label>
+                  <input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.discount || ''} onChange={e => setFormData({...formData, discount: parseFloat(e.target.value) || 0})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Нач. Долг</label>
+                  <input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.debt || ''} onChange={e => setFormData({...formData, debt: parseFloat(e.target.value) || 0})} />
+                </div>
               </div>
-              <p className="text-[9px] text-slate-400 italic text-center px-4">Email помогает клиенту видеть историю своих покупок.</p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 mt-4">
               <button type="button" onClick={closeModal} className="flex-1 py-4 font-bold text-slate-400">Отмена</button>
               <button type="submit" className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg">СОХРАНИТЬ</button>
             </div>
@@ -159,37 +188,34 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-xl font-black text-slate-800">{customers.find(c => c.id === viewHistoryId)?.name}</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">История операций</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Текущий долг:</span>
+                  <span className="text-lg font-black text-red-500">{customers.find(c => c.id === viewHistoryId)?.debt.toLocaleString()} ₽</span>
+                </div>
               </div>
-              <button onClick={() => setViewHistoryId(null)} className="w-12 h-12 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center"><i className="fas fa-times"></i></button>
+              <button onClick={() => setViewHistoryId(null)} className="w-12 h-12 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center">
+                <i className="fas fa-times text-xl"></i>
+              </button>
             </div>
-            <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar pb-6">
-              {getClientHistory(viewHistoryId).map(op => (
-                <div key={op.id} className="bg-slate-50 p-4 rounded-3xl border border-slate-100 flex justify-between items-center">
-                  <div>
-                    <p className="font-bold text-slate-800 text-sm">{op.title}</p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p>
-                    {op.isDebt && <span className="text-[8px] font-black text-red-500 uppercase">В долг</span>}
+
+            <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar pb-6 pr-1">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-1">История покупок и оплат</p>
+              {combinedHistory.map(op => (
+                <div key={op.id} className={`p-4 rounded-3xl border flex justify-between items-center ${op.type === 'PAYMENT' ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+                  <div className="flex-1 min-w-0 pr-4">
+                    <p className="font-bold text-slate-800 text-sm truncate">{op.title}</p>
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-tighter mb-0.5">{op.subtitle}</p>
+                    <p className="text-[9px] text-slate-300 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p>
                   </div>
-                  <p className={`font-black text-lg ${op.type === 'PAYMENT' ? 'text-emerald-600' : 'text-slate-800'}`}>
-                    {op.type === 'PAYMENT' ? '-' : ''}{op.amount.toLocaleString()} ₽
-                  </p>
+                  <div className="text-right">
+                    <p className={`font-black text-sm ${op.type === 'PAYMENT' ? 'text-emerald-600' : 'text-slate-800'}`}>
+                      {op.type === 'PAYMENT' ? '−' : ''}{op.amount.toLocaleString()} ₽
+                    </p>
+                    {op.type === 'SALE' && op.isNegative && <span className="text-[7px] bg-red-100 text-red-500 px-1 py-0.5 rounded font-black uppercase">В долг</span>}
+                  </div>
                 </div>
               ))}
-              {getClientHistory(viewHistoryId).length === 0 && <p className="text-center py-10 text-slate-300 italic">Операций не найдено</p>}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmDeleteId && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-white p-8 rounded-[40px] shadow-2xl w-full max-w-sm text-center space-y-6 animate-slide-up">
-            <div className="w-20 h-20 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mx-auto text-3xl"><i className="fas fa-user-minus"></i></div>
-            <h3 className="text-xl font-black text-slate-800">Удалить клиента?</h3>
-            <div className="flex gap-3">
-              <button onClick={() => setConfirmDeleteId(null)} className="flex-1 py-4 font-bold text-slate-400">Отмена</button>
-              <button onClick={() => { onDelete(confirmDeleteId); setConfirmDeleteId(null); }} className="flex-1 bg-red-500 text-white py-4 rounded-2xl font-black">УДАЛИТЬ</button>
+              {combinedHistory.length === 0 && <p className="text-center py-20 text-slate-300 italic">История пуста</p>}
             </div>
           </div>
         </div>

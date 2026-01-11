@@ -174,25 +174,45 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch, orders]);
 
+  const handleAddCashEntry = (entry: CashEntry) => {
+    setCashEntries([entry, ...cashEntries]);
+
+    // Если это приход от клиента - уменьшаем его долг
+    if (entry.type === 'INCOME' && entry.customerId) {
+      setCustomers(prev => prev.map(c =>
+        c.id === entry.customerId
+          ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - entry.amount) }
+          : c
+      ));
+    }
+
+    // Если это расход поставщику - уменьшаем наш долг перед ним
+    if (entry.type === 'EXPENSE' && entry.supplierId) {
+      setSuppliers(prev => prev.map(s =>
+        s.id === entry.supplierId
+          ? { ...s, debt: Math.max(0, (Number(s.debt) || 0) - entry.amount) }
+          : s
+      ));
+    }
+  };
+
   const handleConfirmOrder = (order: Order) => {
     let finalCustomerId = order.customerId;
     let updatedCustomers = [...customers];
 
-    // Авто-регистрация нового клиента если данные в note
     if (order.note && order.note.includes('[Имя:')) {
       const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
       const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
       const name = matchName ? matchName[1].trim() : 'Новый клиент';
       const phone = matchPhone ? matchPhone[1].trim() : '';
 
-      // Проверяем нет ли уже такого клиента по телефону
       const existing = customers.find(c => c.phone === phone);
       if (!existing) {
         const newCust: Customer = {
           id: `CUST-${Date.now()}`,
           name: name,
           phone: phone,
-          debt: order.total // Сразу прибавляем сумму заказа к долгу
+          debt: order.total
         };
         updatedCustomers = [newCust, ...customers];
         finalCustomerId = newCust.id;
@@ -203,7 +223,6 @@ const App: React.FC = () => {
         );
       }
     } else {
-      // Если клиент уже привязан, просто обновляем его долг
       updatedCustomers = customers.map(c =>
         c.id === finalCustomerId ? { ...c, debt: (Number(c.debt) || 0) + order.total } : c
       );
@@ -232,7 +251,7 @@ const App: React.FC = () => {
     setSales([newSale, ...sales]);
     setProducts(updatedProducts);
     setOrders(updatedOrders);
-    setCustomers(updatedCustomers); // Обновляем список клиентов
+    setCustomers(updatedCustomers);
     alert('Заказ выдан! Клиент привязан и сформирована продажа.');
   };
 
@@ -249,9 +268,14 @@ const App: React.FC = () => {
     switch (view) {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={(v) => setView(v as AppView)} orderCount={orders.filter(o => o.status === 'NEW').length}/>;
       case 'PRODUCTS': return <ProductList products={products} categories={categories} canEdit={true} canCreate={true} canDelete={true} showCost={true} onAdd={p => setProducts([p, ...products])} onAddBulk={ps => setProducts([...ps, ...products])} onUpdate={p => setProducts(products.map(x => x.id === p.id ? p : x))} onDelete={id => setProducts(products.filter(x => x.id !== id))} onAddCategory={c => setCategories([...categories, c])} onRenameCategory={(o, n) => { setCategories(categories.map(c => c === o ? n : c)); setProducts(products.map(p => p.category === o ? { ...p, category: n } : p)); }} onDeleteCategory={c => { setCategories(categories.filter(x => x !== c)); setProducts(products.map(p => p.category === c ? { ...p, category: 'Другое' } : p)); }}/>;
-      case 'WAREHOUSE': return <Warehouse products={products} suppliers={suppliers} transactions={transactions} batch={warehouseBatch} setBatch={setWarehouseBatch} onTransaction={t => setTransactions([t, ...transactions])} onTransactionsBulk={ts => setTransactions([...ts, ...transactions])} onAddCashEntry={() => {}}/>;
-      case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} currentUserId={currentUser.id} onSale={(s) => setSales([s, ...sales])}/>;
-      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={(e) => setCashEntries([e, ...cashEntries])}/>;
+      case 'WAREHOUSE': return <Warehouse products={products} suppliers={suppliers} transactions={transactions} batch={warehouseBatch} setBatch={setWarehouseBatch} onTransaction={t => setTransactions([t, ...transactions])} onTransactionsBulk={ts => setTransactions([...ts, ...transactions])} onAddCashEntry={handleAddCashEntry}/>;
+      case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} currentUserId={currentUser.id} onSale={(s) => {
+        setSales([s, ...sales]);
+        if (s.paymentMethod === 'DEBT' && s.customerId) {
+          setCustomers(prev => prev.map(c => c.id === s.customerId ? { ...c, debt: (Number(c.debt) || 0) + s.total } : c));
+        }
+      }}/>;
+      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={handleAddCashEntry}/>;
       case 'REPORTS': return <Reports sales={sales} products={products} transactions={transactions}/>;
       case 'ALL_OPERATIONS': return <AllOperations sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees} customers={customers} settings={settings} onUpdateTransaction={()=>{}} onDeleteTransaction={()=>{}} onDeleteSale={()=>{}} onDeleteCashEntry={()=>{}} canDelete={true}/>;
       case 'STOCK_REPORT': return <StockReport products={products}/>;
@@ -320,7 +344,7 @@ const App: React.FC = () => {
         <>
           {isQuickMenuOpen && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-end justify-center pb-24 px-4" onClick={() => setQuickMenuOpen(false)}>
-              <div className="grid grid-cols-2 gap-4 p-6 bg-white rounded-[40px] w-full max-w-sm shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
+              <div className="grid grid-cols-2 gap-4 p-6 bg-white rounded-[40px] w-full max-sm shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
                 {QUICK_ACTIONS.map(action => (
                   <button key={action.id} onClick={() => { setView(action.id as AppView); setQuickMenuOpen(false); }} className="flex flex-col items-center justify-center p-4 rounded-3xl active:bg-slate-50 transition-colors">
                     <div className={`${action.color} text-white w-14 h-14 flex items-center justify-center rounded-2xl shadow-lg mb-2`}><i className={`fas ${action.icon} text-xl`}></i></div>
