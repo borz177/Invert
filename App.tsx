@@ -53,10 +53,6 @@ const App: React.FC = () => {
 
   const isDataLoaded = useRef(false);
 
-  const isAdminOrOwner =
-    currentUser?.role === 'admin' ||
-    (currentUser && currentUser.id === currentUser.ownerId);
-
   const isClient = currentUser?.role === 'client';
 
   const handleLogin = (user: User) => {
@@ -179,55 +175,30 @@ const App: React.FC = () => {
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch, orders]);
 
   const handleConfirmOrder = (order: Order) => {
-    // 1. Создаем продажу
     const newSale: Sale = {
       id: `SALE-ORD-${order.id}`,
       employeeId: currentUser?.id || 'admin',
       items: order.items.map(it => {
         const prod = products.find(p => p.id === it.productId);
-        return {
-          productId: it.productId,
-          quantity: it.quantity,
-          price: it.price,
-          cost: prod?.cost || 0
-        };
+        return { productId: it.productId, quantity: it.quantity, price: it.price, cost: prod?.cost || 0 };
       }),
       total: order.total,
-      paymentMethod: 'CASH', // По умолчанию за нал
+      paymentMethod: 'DEBT',
       date: new Date().toISOString(),
       customerId: order.customerId
     };
 
-    // 2. Обновляем остатки товаров
     const updatedProducts = products.map(p => {
-      const orderItem = order.items.find(it => it.productId === p.id);
-      if (orderItem) {
-        return { ...p, quantity: Math.max(0, p.quantity - orderItem.quantity) };
-      }
-      return p;
+      const it = order.items.find(x => x.productId === p.id);
+      return it ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) } : p;
     });
 
-    // 3. Добавляем запись в кассу (Приход)
-    const newCashEntry: CashEntry = {
-      id: `CASH-ORD-${order.id}`,
-      amount: order.total,
-      type: 'INCOME',
-      category: 'Продажа по заказу',
-      description: `Заказ №${order.id.slice(-4)}`,
-      date: new Date().toISOString(),
-      employeeId: currentUser?.id || 'admin',
-      customerId: order.customerId
-    };
-
-    // 4. Обновляем статус заказа
     const updatedOrders = orders.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED' as const } : o);
 
     setSales([newSale, ...sales]);
     setProducts(updatedProducts);
-    setCashEntries([newCashEntry, ...cashEntries]);
     setOrders(updatedOrders);
-
-    alert('Заказ успешно выдан и проведен как продажа!');
+    alert('Заказ выдан! Сформирована продажа (в долг).');
   };
 
   const renderView = () => {
@@ -235,12 +206,7 @@ const App: React.FC = () => {
 
     if (isClient) {
       if (view === 'PROFILE') {
-        return <Profile
-          user={{id: currentUser.id, name: currentUser.name, role: 'client', login: currentUser.email, password: '', salary: 0, revenuePercent: 0, profitPercent: 0, permissions: {}, debt: (currentUser as any).debt || 0} as any}
-          sales={sales}
-          onLogout={handleLogout}
-          onUpdateProfile={handleLogin}
-        />;
+        return <Profile user={currentUser as any} sales={sales} onLogout={handleLogout} onUpdateProfile={handleLogin} />;
       }
       return <ClientPortal user={currentUser} products={products} sales={sales} orders={orders} onAddOrder={(o) => setOrders([o, ...orders])} onActiveShopChange={(name) => setActiveClientShopName(name)} />;
     }
