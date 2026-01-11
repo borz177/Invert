@@ -135,18 +135,44 @@ const AllOperations: React.FC<AllOperationsProps> = ({
     <div className="space-y-6 pb-20" onClick={() => setActiveMenuId(null)}>
       <style>{`
         @media print {
-          body * { visibility: hidden; }
-          #invoice-print-area, #invoice-print-area * { visibility: visible; }
-          #invoice-print-area { 
-            position: absolute; 
-            left: 0; 
-            top: 0; 
-            width: 100%; 
-            padding: 20px;
-            color: black;
-            background: white;
+          /* Сбрасываем ограничения высоты и переполнения, заданные в App.tsx */
+          html, body, #root, [class*="h-screen"], [class*="overflow-hidden"], main {
+            height: auto !important;
+            overflow: visible !important;
+            display: block !important;
+            position: relative !important;
+            background: white !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
-          .no-print { display: none !important; }
+          
+          /* Скрываем всё, кроме области накладной */
+          body > *:not(#root), 
+          header, nav, .no-print, button, [class*="fixed"], [class*="backdrop-blur"] {
+            display: none !important;
+          }
+
+          /* Показываем только накладную */
+          #invoice-print-area {
+            display: block !important;
+            visibility: visible !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            z-index: 9999 !important;
+            padding: 20px !important;
+            background: white !important;
+          }
+
+          #invoice-print-area * {
+            visibility: visible !important;
+            color: black !important;
+          }
+
+          /* Оформление таблиц для печати */
+          table { border-collapse: collapse !important; width: 100% !important; }
+          th, td { border: 1px solid black !important; padding: 8px !important; }
         }
       `}</style>
 
