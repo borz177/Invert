@@ -82,7 +82,33 @@ const initDb = async () => {
 
 initDb();
 
-// Обновление профиля
+// Поиск публичных магазинов
+app.post('/api/shops/search', async (req, res) => {
+  const { query } = req.body;
+  try {
+    // Выбираем всех владельцев, у которых в настройках isPublic: true
+    const shopsData = await pool.query(
+      `SELECT u.id, u.name as ownerName, s.data as settings 
+       FROM users u 
+       JOIN app_store s ON u.id = s.user_id 
+       WHERE u.role = 'admin' AND s.key = 'settings' 
+       AND (s.data->>'isPublic')::boolean = true
+       AND (s.data->>'shopName' ILIKE $1 OR u.name ILIKE $1)`,
+      [`%${query}%`]
+    );
+
+    const result = shopsData.rows.map(row => ({
+      id: row.id,
+      shopName: row.settings.shopName || 'Без названия',
+      ownerName: row.ownerName
+    }));
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка при поиске' });
+  }
+});
+
 app.post('/api/auth/update-profile', async (req, res) => {
   const { userId, name, currentPassword, newPassword } = req.body;
   if (!userId) return res.status(400).json({ error: 'User ID is required' });
@@ -119,37 +145,24 @@ app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
     const cleanEmail = email.toLowerCase().trim();
-    // 1. Проверка владельцев
+    // 1. Проверка владельцев и клиентов
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
     if (result.rows.length > 0) {
       const user = result.rows[0];
       const isValid = await bcrypt.compare(password, user.password_hash);
       if (isValid) {
         const { password_hash, ...safeUser } = user;
-        return res.json({ ...safeUser, ownerId: safeUser.id });
+        return res.json({ ...safeUser, ownerId: safeUser.role === 'admin' ? safeUser.id : undefined });
       }
     }
 
-    // 2. Проверка сотрудников и клиентов (в app_store)
-    const storeData = await pool.query("SELECT user_id, key, data FROM app_store WHERE key IN ('employees', 'customers')");
-
-    // Сначала ищем среди сотрудников
-    const employeesRows = storeData.rows.filter(r => r.key === 'employees');
-    for (const row of employeesRows) {
+    // 2. Проверка сотрудников (в app_store)
+    const storeData = await pool.query("SELECT user_id, key, data FROM app_store WHERE key = 'employees'");
+    for (const row of storeData.rows) {
       const employees = Array.isArray(row.data) ? row.data : [];
       const employee = employees.find(e => e.login === email && e.password === password);
       if (employee) {
         return res.json({ id: employee.id, email: employee.login, name: employee.name, role: employee.role, ownerId: row.user_id, permissions: employee.permissions });
-      }
-    }
-
-    // Затем ищем среди клиентов
-    const customersRows = storeData.rows.filter(r => r.key === 'customers');
-    for (const row of customersRows) {
-      const customers = Array.isArray(row.data) ? row.data : [];
-      const customer = customers.find(c => c.login === email && c.password === password);
-      if (customer) {
-        return res.json({ id: customer.id, email: customer.login || customer.email, name: customer.name, role: 'client', ownerId: row.user_id });
       }
     }
 
@@ -162,7 +175,7 @@ app.post('/api/auth/login', async (req, res) => {
 const ARRAY_KEYS = [
   'products', 'transactions', 'sales', 'cashEntries',
   'suppliers', 'customers', 'employees', 'categories',
-  'posCart', 'warehouseBatch', 'orders'
+  'posCart', 'warehouseBatch', 'orders', 'linkedShops'
 ];
 
 app.post('/api/data', async (req, res) => {
@@ -188,15 +201,15 @@ app.post('/api/data/save', async (req, res) => {
 });
 
 app.post('/api/auth/register', async (req, res) => {
-  const { email, password, name } = req.body;
+  const { email, password, name, role } = req.body;
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
       'INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, name, role',
-      [email.toLowerCase().trim(), hashedPassword, name, 'admin']
+      [email.toLowerCase().trim(), hashedPassword, name, role || 'admin']
     );
     const user = result.rows[0];
-    res.status(201).json({ ...user, ownerId: user.id });
+    res.status(201).json({ ...user, ownerId: user.role === 'admin' ? user.id : undefined });
   } catch (err) { res.status(err.code === '23505' ? 409 : 500).json({ error: 'Ошибка регистрации' }); }
 });
 

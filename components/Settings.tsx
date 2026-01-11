@@ -23,6 +23,36 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate, onClear }) => {
           />
         </div>
 
+        <div className="space-y-4 pt-2">
+           <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Клиентский доступ</p>
+
+           <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+            <div>
+              <p className="font-black text-slate-700 text-sm">Публичный магазин</p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase">Клиенты могут найти вас по названию</p>
+            </div>
+            <button
+              onClick={() => onUpdate({...settings, isPublic: !settings.isPublic})}
+              className={`w-12 h-6 rounded-full transition-all flex items-center px-1 ${settings.isPublic ? 'bg-indigo-600 justify-end' : 'bg-slate-300 justify-start'}`}
+            >
+              <div className="w-4 h-4 bg-white rounded-full shadow-sm"></div>
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+            <div>
+              <p className="font-black text-slate-700 text-sm">Показывать товары</p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase">Клиенты увидят вашу витрину в приложении</p>
+            </div>
+            <button
+              onClick={() => onUpdate({...settings, showProductsToClients: !settings.showProductsToClients})}
+              className={`w-12 h-6 rounded-full transition-all flex items-center px-1 ${settings.showProductsToClients ? 'bg-indigo-600 justify-end' : 'bg-slate-300 justify-start'}`}
+            >
+              <div className="w-4 h-4 bg-white rounded-full shadow-sm"></div>
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Валюта</label>

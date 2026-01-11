@@ -6,6 +6,7 @@ export interface User {
   role: 'admin' | 'user' | 'кассир' | 'менеджер' | 'кладовщик' | 'управляющий' | 'client';
   ownerId?: string;
   permissions?: any;
+  linkedShopIds?: string[]; // Для клиентов: список ID магазинов
 }
 
 export interface Product {
@@ -37,8 +38,6 @@ export interface Customer {
   address?: string;
   discount?: number;
   debt: number;
-  login?: string;
-  password?: string;
 }
 
 export interface Order {
@@ -121,6 +120,8 @@ export interface AppSettings {
   currency: string;
   lowStockThreshold: number;
   darkMode: boolean;
+  isPublic?: boolean; // Виден ли магазин в поиске
+  showProductsToClients?: boolean; // Видны ли товары клиентам
 }
 
 export type AppView =

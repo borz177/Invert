@@ -23,17 +23,6 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.name) {
-      // Проверка на уникальность логина
-      if (formData.login) {
-        const isDuplicate = customers.some(c =>
-          c.login === formData.login && (!editingClient || c.id !== editingClient.id)
-        );
-        if (isDuplicate) {
-          alert('Этот логин уже занят другим клиентом. Пожалуйста, выберите другой.');
-          return;
-        }
-      }
-
       if (editingClient) {
         onUpdate({ ...editingClient, ...formData } as Customer);
       } else {
@@ -65,7 +54,8 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
 
   const filtered = customers.filter(c =>
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.phone.includes(searchTerm)
+    c.phone.includes(searchTerm) ||
+    (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const getClientHistory = (clientId: string) => {
@@ -99,7 +89,7 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
 
       <div className="relative">
         <i className="fas fa-search absolute left-4 top-4 text-slate-400"></i>
-        <input className="w-full p-4 pl-12 rounded-2xl border border-slate-200 bg-white shadow-sm outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all" placeholder="Поиск..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+        <input className="w-full p-4 pl-12 rounded-2xl border border-slate-200 bg-white shadow-sm outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all" placeholder="Поиск по имени, тел или email..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
       </div>
 
       <div className="grid gap-3">
@@ -112,8 +102,8 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
               <div>
                 <h4 className="font-bold text-slate-800 leading-tight">{c.name}</h4>
                 <p className="text-xs text-slate-400">{c.phone || '---'}</p>
+                {c.email && <p className="text-[10px] text-indigo-400 font-bold">{c.email}</p>}
                 {c.debt > 0 && <p className="text-[10px] font-black text-red-500 uppercase mt-1">Долг: {c.debt.toLocaleString()} ₽</p>}
-                {c.login && <p className="text-[8px] font-black text-indigo-400 uppercase mt-0.5">Личный кабинет: {c.login}</p>}
               </div>
             </div>
 
@@ -132,7 +122,7 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
 
       {showAdd && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
-          <form onSubmit={handleSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-w-sm space-y-5 animate-fade-in max-h-[90vh] overflow-y-auto no-scrollbar">
+          <form onSubmit={handleSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-w-sm space-y-5 animate-fade-in">
             <h3 className="text-xl font-black text-slate-800 text-center">{editingClient ? 'Изменить клиента' : 'Новый клиент'}</h3>
             <div className="space-y-4">
               <div className="space-y-1">
@@ -142,15 +132,9 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Скидка %" value={formData.discount || ''} onChange={e => setFormData({...formData, discount: parseInt(e.target.value) || 0})} />
-                <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Email" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
+                <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Email (для связи с аккаунтом)" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
               </div>
-
-              <div className="p-4 bg-indigo-50 rounded-3xl space-y-3">
-                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center">Доступ в личный кабинет</p>
-                <input required={!!formData.password} className="w-full p-3 bg-white border border-indigo-100 rounded-xl text-xs font-bold" placeholder="Логин для входа" value={formData.login || ''} onChange={e => setFormData({...formData, login: e.target.value})} />
-                <input required={!!formData.login} className="w-full p-3 bg-white border border-indigo-100 rounded-xl text-xs font-bold" placeholder="Пароль" value={formData.password || ''} onChange={e => setFormData({...formData, password: e.target.value})} />
-                <p className="text-[8px] text-slate-400 italic text-center">Логин и пароль должны быть уникальными для каждого клиента</p>
-              </div>
+              <p className="text-[9px] text-slate-400 italic text-center px-4">Если Email клиента совпадет с его личным аккаунтом, он увидит историю покупок у себя в приложении автоматически.</p>
             </div>
             <div className="flex gap-3">
               <button type="button" onClick={closeModal} className="flex-1 py-4 font-bold text-slate-400">Отмена</button>

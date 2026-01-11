@@ -9,6 +9,7 @@ interface LoginProps {
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [isRegister, setIsRegister] = useState(false);
+  const [role, setRole] = useState<'client' | 'seller'>('seller');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -23,7 +24,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     try {
       let user: User;
       if (isRegister) {
-        user = await db.auth.register(email, password, name);
+        user = await db.auth.register(email, password, name, role === 'seller' ? 'admin' : 'client');
       } else {
         user = await db.auth.login(email, password);
       }
@@ -50,6 +51,25 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           </p>
         </div>
 
+        {isRegister && (
+          <div className="flex bg-slate-50 p-1 rounded-2xl mb-6">
+            <button
+              type="button"
+              onClick={() => setRole('seller')}
+              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${role === 'seller' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+            >
+              Я Продавец
+            </button>
+            <button
+              type="button"
+              onClick={() => setRole('client')}
+              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${role === 'client' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+            >
+              Я Клиент
+            </button>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           {isRegister && (
             <div className="relative group">
@@ -59,7 +79,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               <input
                 type="text" required
                 className="w-full p-5 pl-14 bg-slate-50 border border-slate-100 rounded-[24px] outline-none focus:ring-4 focus:ring-indigo-500/10 focus:bg-white transition-all font-medium text-slate-700"
-                placeholder="Ваше имя"
+                placeholder={role === 'seller' ? 'Название магазина' : 'Ваше имя'}
                 value={name}
                 onChange={e => setName(e.target.value)}
               />

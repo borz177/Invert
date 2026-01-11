@@ -1,5 +1,5 @@
 
-import { Product, Transaction, Sale, CashEntry, Supplier, Customer, Employee, User } from '../types';
+import { Product, Transaction, Sale, CashEntry, Supplier, Customer, Employee, User, AppSettings } from '../types';
 
 const getApiUrl = () => {
   const { protocol, hostname, port } = window.location;
@@ -29,11 +29,11 @@ async function fetchWithTimeout(url: string, options: any = {}) {
 
 export const db = {
   auth: {
-    async register(email: string, password: string, name: string): Promise<User> {
+    async register(email: string, password: string, name: string, role: string): Promise<User> {
       const res = await fetchWithTimeout(`${API_BASE}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name })
+        body: JSON.stringify({ email, password, name, role })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ошибка регистрации');
@@ -61,6 +61,18 @@ export const db = {
     }
   },
 
+  shops: {
+    async search(query: string): Promise<any[]> {
+      const res = await fetchWithTimeout(`${API_BASE}/shops/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query })
+      });
+      if (!res.ok) return [];
+      return await res.json();
+    }
+  },
+
   async getData(key: string) {
     const userJson = localStorage.getItem('currentUser');
     if (!userJson) return null;
@@ -70,9 +82,9 @@ export const db = {
     try {
       const response = await fetchWithTimeout(`${API_BASE}/data`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json' 
+          'Accept': 'application/json'
         },
         body: JSON.stringify({ key, user_id: targetUserId })
       });
@@ -83,6 +95,34 @@ export const db = {
     } catch (e) {
       const local = localStorage.getItem(`cache_${targetUserId}_${key}`);
       return local ? JSON.parse(local) : null;
+    }
+  },
+
+  // Получение данных из контекста ЧУЖОГО магазина (для клиентов)
+  async getDataOfShop(shopOwnerId: string, key: string) {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE}/data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, user_id: shopOwnerId })
+      });
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async saveDataOfShop(shopOwnerId: string, key: string, data: any) {
+     try {
+      await fetchWithTimeout(`${API_BASE}/data/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, data, user_id: shopOwnerId })
+      });
+      return true;
+    } catch (e) {
+      return false;
     }
   },
 
