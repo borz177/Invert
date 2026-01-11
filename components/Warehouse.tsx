@@ -31,16 +31,12 @@ const Warehouse: React.FC<WarehouseProps> = ({ products, suppliers, transactions
   }, [suppliers, selectedSupplier]);
 
   const categories = useMemo(() => {
-    // Показываем категории только для физических товаров
-    return Array.from(new Set(products.filter(p => p.type !== 'SERVICE').map(p => p.category))).sort();
+    return Array.from(new Set(products.map(p => p.category))).sort();
   }, [products]);
 
   const filteredProducts = useMemo(() => {
     if (!selectedCategory) return [];
-    // Скрываем услуги из складского прихода
-    return products
-      .filter(p => p.category === selectedCategory && p.type !== 'SERVICE')
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return products.filter(p => p.category === selectedCategory).sort((a, b) => a.name.localeCompare(b.name));
   }, [selectedCategory, products]);
 
   const addToBatch = () => {
@@ -67,6 +63,7 @@ const Warehouse: React.FC<WarehouseProps> = ({ products, suppliers, transactions
     if (!selectedSupplier) { alert('Пожалуйста, выберите поставщика!'); return; }
 
     const supplier = suppliers.find(s => s.id === selectedSupplier);
+    const totalBatchAmount = batch.reduce((acc, b) => acc + (b.quantity * b.cost), 0);
 
     const ts: Transaction[] = batch.map(b => ({
       id: Math.random().toString(36).substr(2, 9),
@@ -81,6 +78,7 @@ const Warehouse: React.FC<WarehouseProps> = ({ products, suppliers, transactions
       employeeId: ''
     }));
 
+    // Автоматический расход из кассы при оплате налом
     if (paymentMethod === 'CASH' && onAddCashEntry) {
       ts.forEach(t => {
         onAddCashEntry({
@@ -104,7 +102,7 @@ const Warehouse: React.FC<WarehouseProps> = ({ products, suppliers, transactions
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-800 px-1">Приход товара</h2>
+      <h2 className="text-2xl font-bold text-slate-800 px-1">Приход на склад</h2>
 
       <div className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 space-y-5 animate-fade-in">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
