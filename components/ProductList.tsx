@@ -318,9 +318,11 @@ const ProductList: React.FC<ProductListProps> = ({
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ед. изм.</label>
-                  <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value as any})}>
+                  <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
+                          value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value as any})}>
                     <option value="шт">шт</option>
                     <option value="кг">кг</option>
+                    <option value="кор">кор</option>
                     <option value="упак">упак</option>
                     <option value="ящик">ящик</option>
                     <option value="л">л</option>

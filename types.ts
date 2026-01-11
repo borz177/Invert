@@ -18,7 +18,7 @@ export interface Product {
   quantity: number;
   category: string;
   minStock: number;
-  unit: 'шт' | 'кг' | 'упак' | 'ящик' | 'л' | 'мл';
+  unit: 'шт' | 'кг' | 'кор' | 'упак' | 'ящик' | 'л' | 'мл';
   image?: string;
 }
 

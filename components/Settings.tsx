@@ -6,9 +6,10 @@ interface SettingsProps {
   settings: AppSettings;
   onUpdate: (s: AppSettings) => void;
   onClear: () => void;
+  isOwner?: boolean;
 }
 
-const Settings: React.FC<SettingsProps> = ({ settings, onUpdate, onClear }) => {
+const Settings: React.FC<SettingsProps> = ({ settings, onUpdate, onClear, isOwner }) => {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black text-slate-800 px-2">Настройки</h2>
@@ -92,18 +93,20 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate, onClear }) => {
         </div>
       </div>
 
-      <div className="p-6 bg-red-50 rounded-[40px] border border-red-100">
-        <h3 className="font-black text-red-600 text-sm uppercase tracking-widest mb-2">Опасная зона</h3>
-        <p className="text-xs text-red-400 font-medium mb-4 leading-relaxed">
-          Удаление всех данных приведет к полной очистке каталога, истории продаж и кассы. Это действие необратимо.
-        </p>
-        <button
-          onClick={onClear}
-          className="w-full py-4 bg-white border-2 border-red-100 text-red-500 rounded-2xl font-black text-xs uppercase tracking-widest active:bg-red-50 transition-colors"
-        >
-          ОЧИСТИТЬ ВСЕ ДАННЫЕ
-        </button>
-      </div>
+      {isOwner && (
+        <div className="p-6 bg-red-50 rounded-[40px] border border-red-100 animate-fade-in">
+          <h3 className="font-black text-red-600 text-sm uppercase tracking-widest mb-2">Опасная зона</h3>
+          <p className="text-xs text-red-400 font-medium mb-4 leading-relaxed">
+            Удаление всех данных приведет к полной очистке каталога, истории продаж и кассы. Это действие необратимо.
+          </p>
+          <button
+            onClick={onClear}
+            className="w-full py-4 bg-white border-2 border-red-100 text-red-500 rounded-2xl font-black text-xs uppercase tracking-widest active:bg-red-50 transition-colors"
+          >
+            ОЧИСТИТЬ ВСЕ ДАННЫЕ
+          </button>
+        </div>
+      )}
 
       <div className="text-center py-4">
         <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">ИнвентарьПро v2.1.0</p>

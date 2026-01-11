@@ -290,7 +290,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
                  <div className="bg-emerald-50 p-8 rounded-[40px] border border-emerald-100 text-center">
                     <p className="text-[10px] font-black text-emerald-400 uppercase mb-2">Сумма оплаты</p>
                     <p className="text-4xl font-black text-emerald-600">{selectedOpDetail.amount.toLocaleString()} ₽</p>
-                    <p className="text-xs text-emerald-400 font-bold mt-4 uppercase">Зачислено на ваш баланс</p>
+                    <p className="text-xs text-emerald-400 font-bold mt-4 uppercase">Оплачено</p>
                  </div>
                )}
                <button onClick={() => setSelectedOpDetail(null)} className="mt-8 w-full py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Закрыть</button>
