@@ -56,7 +56,6 @@ const App: React.FC = () => {
   const isClient = currentUser?.role === 'client';
   const isAdmin = currentUser?.role === 'admin';
 
-  // Динамические права доступа
   const userPerms = currentUser?.permissions || {
     canEditProduct: isAdmin,
     canCreateProduct: isAdmin,
@@ -150,38 +149,39 @@ const App: React.FC = () => {
   const handleUpdateSale = (updatedSale: Sale) => {
     const oldSale = sales.find(s => s.id === updatedSale.id);
     if (!oldSale) return;
+
+    // 1. Возвращаем старые количества на склад и сторнируем старый долг
     let updatedProducts = [...products];
     oldSale.items.forEach(oldItem => {
-      updatedProducts = updatedProducts.map(p => p.id === oldItem.productId ? { ...p, quantity: p.quantity + oldItem.quantity } : p);
+      updatedProducts = updatedProducts.map(p =>
+        p.id === oldItem.productId ? { ...p, quantity: p.quantity + oldItem.quantity } : p
+      );
     });
+
     let updatedCustomers = [...customers];
     if (oldSale.paymentMethod === 'DEBT' && oldSale.customerId) {
-      updatedCustomers = updatedCustomers.map(c => c.id === oldSale.customerId ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - oldSale.total) } : c);
+      updatedCustomers = updatedCustomers.map(c =>
+        c.id === oldSale.customerId ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - oldSale.total) } : c
+      );
     }
+
+    // 2. Списываем новые количества и применяем новый долг
     updatedSale.items.forEach(newItem => {
-      updatedProducts = updatedProducts.map(p => p.id === newItem.productId ? { ...p, quantity: Math.max(0, p.quantity - newItem.quantity) } : p);
+      updatedProducts = updatedProducts.map(p =>
+        p.id === newItem.productId ? { ...p, quantity: Math.max(0, p.quantity - newItem.quantity) } : p
+      );
     });
+
     if (updatedSale.paymentMethod === 'DEBT' && updatedSale.customerId) {
-      updatedCustomers = updatedCustomers.map(c => c.id === updatedSale.customerId ? { ...c, debt: (Number(c.debt) || 0) + updatedSale.total } : c);
+      updatedCustomers = updatedCustomers.map(c =>
+        c.id === updatedSale.customerId ? { ...c, debt: (Number(c.debt) || 0) + updatedSale.total } : c
+      );
     }
+
     setProducts(updatedProducts);
     setCustomers(updatedCustomers);
     setSales(sales.map(s => s.id === updatedSale.id ? updatedSale : s));
-    // Если оплата была не в долг, обновляем кассу
-    if (updatedSale.paymentMethod !== 'DEBT') {
-      const diff = updatedSale.total - oldSale.total;
-      if (diff !== 0) {
-        handleAddCashEntry({
-          id: `CORR-SALE-${Date.now()}`,
-          amount: Math.abs(diff),
-          type: diff > 0 ? 'INCOME' : 'EXPENSE',
-          category: 'Корректировка чека',
-          description: `Изменение суммы чека №${updatedSale.id.slice(-4)}`,
-          date: new Date().toISOString(),
-          employeeId: currentUser?.id || 'admin'
-        });
-      }
-    }
+    alert('Продажа обновлена. Остатки и долг клиента пересчитаны.');
   };
 
   const handleDeleteSale = (id: string) => {
@@ -233,11 +233,11 @@ const App: React.FC = () => {
   };
 
   const handleClearData = async () => {
-    if (!confirm('Вы действительно хотите ОЧИСТИТЬ ВСЕ ДАННЫЕ? Это действие необратимо.')) return;
+    if (!confirm('Вы действительно хотите ОЧИСТИТЬ ВСЕ ДАННЫЕ? Это действие невозможно отменить.')) return;
     setProducts([]); setTransactions([]); setSales([]); setCashEntries([]);
     setSuppliers([]); setCustomers([]); setEmployees([]); setOrders([]);
     setCategories(INITIAL_CATEGORIES);
-    alert('База данных очищена.');
+    alert('База данных магазина полностью очищена.');
   };
 
   const handleConfirmOrder = (order: Order) => {
@@ -250,6 +250,7 @@ const App: React.FC = () => {
       date: new Date().toISOString(),
       customerId: order.customerId
     };
+
     setProducts(products.map(p => {
       const it = order.items.find(x => x.productId === p.id);
       return it ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) } : p;
@@ -273,10 +274,24 @@ const App: React.FC = () => {
       case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} currentUserId={currentUser.id} onSale={s => { setSales([s, ...sales]); if (s.paymentMethod === 'DEBT' && s.customerId) setCustomers(prev => prev.map(c => c.id === s.customerId ? { ...c, debt: (Number(c.debt) || 0) + s.total } : c)); else handleAddCashEntry({ id: `S-${Date.now()}`, amount: s.total, type: 'INCOME', category: 'Продажа', description: `Продажа №${s.id.slice(-4)}`, date: s.date, employeeId: s.employeeId }); }}/>;
       case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={handleAddCashEntry}/>;
       case 'ALL_OPERATIONS': return <AllOperations sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees} customers={customers} settings={settings} onUpdateTransaction={()=>{}} onDeleteTransaction={handleDeleteTransaction} onDeleteSale={handleDeleteSale} onDeleteCashEntry={handleDeleteCashEntry} onUpdateSale={handleUpdateSale} canDelete={isAdmin}/>;
+      case 'SUPPLIERS': return <Suppliers suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products} onAdd={s => setSuppliers([...suppliers, s])} onUpdate={s => setSuppliers(suppliers.map(x => x.id === s.id ? s : x))} onDelete={id => setSuppliers(suppliers.filter(x => x.id !== id))}/>;
+      case 'CLIENTS': return <Clients customers={customers} sales={sales} cashEntries={cashEntries} onAdd={c => setCustomers([...customers, c])} onUpdate={c => setCustomers(customers.map(x => x.id === c.id ? c : x))} onDelete={id => setCustomers(customers.filter(x => x.id !== id))}/>;
       case 'EMPLOYEES': return <Employees employees={isAdmin ? employees : employees.filter(e => e.id === currentUser.id)} sales={sales} onAdd={e => setEmployees([...employees, e])} onUpdate={e => setEmployees(employees.map(x => x.id === e.id ? e : x))} onDelete={id => setEmployees(employees.filter(x => x.id !== id))}/>;
       case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={o => setOrders(orders.map(x => x.id === o.id ? o : x))} onConfirmOrder={handleConfirmOrder}/>;
       case 'SETTINGS': return <Settings settings={settings} onUpdate={setSettings} onClear={handleClearData} isOwner={isAdmin}/>;
       case 'PROFILE': return <Profile user={currentUser as any} sales={sales} onLogout={handleLogout} onUpdateProfile={handleLogin}/>;
+      case 'MORE_MENU': return (
+        <div className="space-y-4 animate-fade-in pb-10">
+          <h2 className="text-2xl font-black text-slate-800 px-2 mb-6">Еще</h2>
+          <div className="grid grid-cols-1 gap-3">
+            <button onClick={() => setView('ORDERS_MANAGER')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i className="fas fa-clipboard-list"></i></div><span className="font-bold text-slate-700">Заказы клиентов</span></button>
+            {isAdmin && <button onClick={() => setView('SUPPLIERS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center"><i className="fas fa-truck-field"></i></div><span className="font-bold text-slate-700">Поставщики</span></button>}
+            {isAdmin && <button onClick={() => setView('CLIENTS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i className="fas fa-users"></i></div><span className="font-bold text-slate-700">Клиенты</span></button>}
+            <button onClick={() => setView('EMPLOYEES')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i className="fas fa-user-tie"></i></div><span className="font-bold text-slate-700">Сотрудники</span></button>
+            <button onClick={() => setView('SETTINGS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-2xl flex items-center justify-center"><i className="fas fa-cog"></i></div><span className="font-bold text-slate-700">Настройки</span></button>
+          </div>
+        </div>
+      );
       default: return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={setView}/>;
     }
   };
