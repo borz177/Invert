@@ -135,34 +135,34 @@ const AllOperations: React.FC<AllOperationsProps> = ({
     <div className="space-y-6 pb-20" onClick={() => setActiveMenuId(null)}>
       <style>{`
         @media print {
-          /* Сбрасываем ограничения высоты и переполнения, заданные в App.tsx */
+          /* Принудительный сброс всех родительских контейнеров */
           html, body, #root, [class*="h-screen"], [class*="overflow-hidden"], main {
             height: auto !important;
+            min-height: auto !important;
             overflow: visible !important;
-            display: block !important;
             position: relative !important;
+            display: block !important;
             background: white !important;
-            margin: 0 !important;
-            padding: 0 !important;
           }
-          
-          /* Скрываем всё, кроме области накладной */
-          body > *:not(#root), 
+
+          /* Скрываем всё, что не относится к накладной */
           header, nav, .no-print, button, [class*="fixed"], [class*="backdrop-blur"] {
             display: none !important;
           }
 
-          /* Показываем только накладную */
+          /* Область печати должна быть видимой и занимать всю страницу */
+          #invoice-print-wrapper {
+            display: block !important;
+            position: static !important;
+            width: 100% !important;
+          }
+
           #invoice-print-area {
             display: block !important;
             visibility: visible !important;
-            position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
             width: 100% !important;
-            z-index: 9999 !important;
-            padding: 20px !important;
-            background: white !important;
+            padding: 0 !important;
+            color: black !important;
           }
 
           #invoice-print-area * {
@@ -170,9 +170,15 @@ const AllOperations: React.FC<AllOperationsProps> = ({
             color: black !important;
           }
 
-          /* Оформление таблиц для печати */
-          table { border-collapse: collapse !important; width: 100% !important; }
-          th, td { border: 1px solid black !important; padding: 8px !important; }
+          table {
+            border-collapse: collapse !important;
+            width: 100% !important;
+          }
+
+          th, td {
+            border: 1px solid black !important;
+            padding: 6px !important;
+          }
         }
       `}</style>
 
@@ -284,7 +290,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
               <button onClick={() => setPrintingSale(null)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 hover:text-slate-600"><i className="fas fa-times"></i></button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 sm:p-10 bg-white">
+            <div id="invoice-print-wrapper" className="flex-1 overflow-y-auto p-4 sm:p-10 bg-white">
               <div id="invoice-print-area" className="font-serif text-slate-900">
                 <div className="flex justify-between items-start mb-8 border-b-2 border-slate-900 pb-4">
                   <div>
