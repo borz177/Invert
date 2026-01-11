@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Product, Transaction, Sale, CashEntry, AppView, Supplier, Customer, Employee, AppSettings, User, Order, LinkedShop } from './types';
+import { Product, Transaction, Sale, CashEntry, AppView, Supplier, Customer, Employee, AppSettings, User, Order } from './types';
 import { NAV_ITEMS, QUICK_ACTIONS, INITIAL_CATEGORIES } from './constants';
 import { db } from './services/api';
 import Dashboard from './components/Dashboard';
@@ -82,20 +82,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSwitchShop = async (shop: LinkedShop) => {
-    setIsLoading(true);
-    try {
-      const user = await db.auth.login(shop.login, shop.password);
-      handleLogin(user);
-      // Сброс состояния данных для нового магазина
-      isDataLoaded.current = false;
-    } catch (err: any) {
-      alert('Ошибка при переключении магазина: ' + err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleLogout = () => {
     setCurrentUser(null);
     setIsAuthenticated(false);
@@ -169,7 +155,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (isAuthenticated) fetchAllData();
-  }, [isAuthenticated, currentUser?.ownerId]); // Рефетч при смене владельца (магазина)
+  }, [isAuthenticated, currentUser?.ownerId]);
 
   useEffect(() => {
     if (!isDataLoaded.current || isLoading || !isAuthenticated) return;
@@ -301,8 +287,6 @@ const App: React.FC = () => {
           sales={sales}
           onLogout={handleLogout}
           onUpdateProfile={handleLogin}
-          onSwitchShop={handleSwitchShop}
-          currentShopName={settings.shopName}
         />;
       }
       return <ClientPortal user={currentUser} products={products} sales={sales} orders={orders} onAddOrder={(o) => setOrders([o, ...orders])} onUpdateOrder={handleUpdateOrder}/>;
@@ -357,7 +341,7 @@ const App: React.FC = () => {
 
       {!isClient && (
         <>
-          {isQuickMenuOpen && <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-end justify-center pb-24 px-4" onClick={() => setQuickMenuOpen(false)}><div className="grid grid-cols-2 gap-4 p-6 bg-white rounded-3xl w-full max-w-sm shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>{QUICK_ACTIONS.map(action => (<button key={action.id} onClick={() => { setView(action.id as AppView); setQuickMenuOpen(false); }} className="flex flex-col items-center justify-center p-4 rounded-2xl active:bg-slate-100 transition-colors"><div className={`${action.color} text-white w-12 h-12 flex items-center justify-center rounded-2xl shadow-lg mb-2`}><i className={`fas ${action.icon} text-xl`}></i></div><span className="text-xs font-bold text-slate-700">{action.label}</span></button>))}</div></div>}
+          {isQuickMenuOpen && <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-end justify-center pb-24 px-4" onClick={() => setQuickMenuOpen(false)}><div className="grid grid-cols-2 gap-4 p-6 bg-white rounded-3xl w-full max-sm shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>{QUICK_ACTIONS.map(action => (<button key={action.id} onClick={() => { setView(action.id as AppView); setQuickMenuOpen(false); }} className="flex flex-col items-center justify-center p-4 rounded-2xl active:bg-slate-100 transition-colors"><div className={`${action.color} text-white w-12 h-12 flex items-center justify-center rounded-2xl shadow-lg mb-2`}><i className={`fas ${action.icon} text-xl`}></i></div><span className="text-xs font-bold text-slate-700">{action.label}</span></button>))}</div></div>}
           <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-slate-200 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] flex justify-around p-1 z-[70] px-2 h-20">
             {NAV_ITEMS.map(item => item.isCenter ? (<div key={item.id} className="relative -top-6"><button onClick={() => setQuickMenuOpen(!isQuickMenuOpen)} className={`w-14 h-14 ${isQuickMenuOpen ? 'bg-slate-800 rotate-45' : 'bg-indigo-600'} text-white rounded-full flex items-center justify-center shadow-2xl border-4 border-white transition-all duration-300 active:scale-90`}><i className="fas fa-plus text-xl"></i></button></div>) : (<button key={item.id} onClick={() => { setView(item.id as AppView); setQuickMenuOpen(false); }} className={`flex flex-col items-center justify-center px-4 rounded-xl transition-all ${view === item.id ? 'text-indigo-600' : 'text-slate-400'}`}><i className={`fas ${item.icon} text-lg mb-0.5`}></i><span className="text-[9px] font-bold uppercase tracking-tighter">{item.label}</span></button>))}
           </nav>
@@ -365,11 +349,11 @@ const App: React.FC = () => {
       )}
       {isClient && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 p-2 flex justify-around z-50 h-20 shadow-lg">
-          <button onClick={() => setView('CLIENT_PORTAL')} className={`flex flex-col items-center justify-center w-1/3 ${view === 'CLIENT_PORTAL' ? 'text-indigo-600' : 'text-slate-400'}`}>
+          <button onClick={() => setView('CLIENT_PORTAL')} className={`flex flex-col items-center justify-center w-1/2 ${view === 'CLIENT_PORTAL' ? 'text-indigo-600' : 'text-slate-400'}`}>
             <i className="fas fa-shopping-bag text-xl mb-1"></i>
             <span className="text-[9px] font-black uppercase">Магазин</span>
           </button>
-          <button onClick={() => setView('PROFILE')} className={`flex flex-col items-center justify-center w-1/3 ${view === 'PROFILE' ? 'text-indigo-600' : 'text-slate-400'}`}>
+          <button onClick={() => setView('PROFILE')} className={`flex flex-col items-center justify-center w-1/2 ${view === 'PROFILE' ? 'text-indigo-600' : 'text-slate-400'}`}>
             <i className="fas fa-user text-xl mb-1"></i>
             <span className="text-[9px] font-black uppercase">Профиль</span>
           </button>
