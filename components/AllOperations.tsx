@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { Sale, Transaction, CashEntry, Product, Employee, Customer, AppSettings } from '../types';
 
@@ -28,7 +27,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string, type: 'SALE' | 'STOCK' | 'CASH' } | null>(null);
-  const [printingSale, setPrintingSale] = useState<any | null>(null);
+  const [printingSale, setPrintingSale] = useState<Sale | null>(null);
 
   const getEmployeeName = (id: string) => {
     if (!id) return '---';
@@ -131,57 +130,64 @@ const AllOperations: React.FC<AllOperationsProps> = ({
     window.print();
   };
 
+  // Функция для получения данных покупателя
+  const getCustomerName = (customerId?: string) => {
+    if (!customerId) return 'Розничный покупатель';
+    const customer = customers.find(c => c.id === customerId);
+    return customer?.name || 'Неизвестный клиент';
+  };
+
+  const getCustomerPhone = (customerId?: string) => {
+    if (!customerId) return '';
+    const customer = customers.find(c => c.id === customerId);
+    return customer?.phone || '';
+  };
+
   return (
     <div className="space-y-6 pb-20" onClick={() => setActiveMenuId(null)}>
+      {/* Стили для печати */}
       <style>{`
         @media print {
-          /* Принудительный сброс всех родительских контейнеров */
-          html, body, #root, [class*="h-screen"], [class*="overflow-hidden"], main {
-            height: auto !important;
-            min-height: auto !important;
-            overflow: visible !important;
-            position: relative !important;
-            display: block !important;
+          body * {
+            visibility: hidden;
+          }
+          #print-only-invoice,
+          #print-only-invoice * {
+            visibility: visible !important;
+          }
+          #print-only-invoice {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 20px !important;
+            font-size: 12pt !important;
+            line-height: 1.4 !important;
+            color: black !important;
             background: white !important;
+            box-sizing: border-box !important;
           }
-
-          /* Скрываем всё, что не относится к накладной */
-          header, nav, .no-print, button, [class*="fixed"], [class*="backdrop-blur"] {
-            display: none !important;
-          }
-
-          /* Область печати должна быть видимой и занимать всю страницу */
-          #invoice-print-wrapper {
-            display: block !important;
-            position: static !important;
-            width: 100% !important;
-          }
-
-          #invoice-print-area {
-            display: block !important;
-            visibility: visible !important;
-            width: 100% !important;
-            padding: 0 !important;
-            color: black !important;
-          }
-
-          #invoice-print-area * {
-            visibility: visible !important;
-            color: black !important;
-          }
-
           table {
             border-collapse: collapse !important;
             width: 100% !important;
           }
-
           th, td {
             border: 1px solid black !important;
             padding: 6px !important;
           }
+          h1, h2, h3, h4, p, div, span {
+            color: black !important;
+          }
+        }
+
+        /* Скрыть блок печати на экране */
+        #print-only-invoice {
+          display: none;
         }
       `}</style>
 
+      {/* Основной интерфейс */}
       <div className="flex justify-between items-center px-1 no-print">
         <h2 className="text-2xl font-black text-slate-800">История операций</h2>
         <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{operations.length}</div>
@@ -282,6 +288,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
         ))}
       </div>
 
+      {/* Модальное окно предпросмотра — только для экрана */}
       {printingSale && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-0 sm:p-4 no-print">
           <div className="bg-white w-full max-w-2xl sm:rounded-[40px] shadow-2xl h-full sm:h-auto max-h-[95vh] flex flex-col animate-slide-up overflow-hidden">
@@ -290,8 +297,8 @@ const AllOperations: React.FC<AllOperationsProps> = ({
               <button onClick={() => setPrintingSale(null)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 hover:text-slate-600"><i className="fas fa-times"></i></button>
             </div>
 
-            <div id="invoice-print-wrapper" className="flex-1 overflow-y-auto p-4 sm:p-10 bg-white">
-              <div id="invoice-print-area" className="font-serif text-slate-900">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-10 bg-white">
+              <div className="font-serif text-slate-900">
                 <div className="flex justify-between items-start mb-8 border-b-2 border-slate-900 pb-4">
                   <div>
                     <h1 className="text-2xl font-black mb-1">РАСХОДНАЯ НАКЛАДНАЯ</h1>
@@ -312,12 +319,10 @@ const AllOperations: React.FC<AllOperationsProps> = ({
                   <div>
                     <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Покупатель:</p>
                     <p className="font-bold underline">
-                      {printingSale.customerId ?
-                        customers.find(c => c.id === printingSale.customerId)?.name || 'Неизвестный клиент' :
-                        'Розничный покупатель'}
+                      {getCustomerName(printingSale.customerId)}
                     </p>
                     {printingSale.customerId && (
-                       <p className="text-[11px] mt-1 italic">Тел: {customers.find(c => c.id === printingSale.customerId)?.phone || '__________'}</p>
+                      <p className="text-[11px] mt-1 italic">Тел: {getCustomerPhone(printingSale.customerId)}</p>
                     )}
                   </div>
                 </div>
@@ -383,6 +388,91 @@ const AllOperations: React.FC<AllOperationsProps> = ({
         </div>
       )}
 
+      {/* Блок для печати — НЕ внутри no-print! */}
+      <div id="print-only-invoice">
+        {printingSale && (
+          <div className="font-serif text-slate-900">
+            <div className="flex justify-between items-start mb-8 border-b-2 border-slate-900 pb-4">
+              <div>
+                <h1 className="text-2xl font-black mb-1">РАСХОДНАЯ НАКЛАДНАЯ</h1>
+                <p className="text-sm font-bold">№ {printingSale.id.slice(-6)} от {new Date(printingSale.date).toLocaleDateString('ru-RU')}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-black text-lg uppercase tracking-tight">{settings?.shopName || 'МОЙ МАГАЗИН'}</p>
+                <p className="text-[10px] text-slate-500 italic">Система учета товаров ИнвентарьПро</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-8 mb-8 text-sm">
+              <div>
+                <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Поставщик:</p>
+                <p className="font-bold underline">{settings?.shopName || 'ИнвентарьПро'}</p>
+                <p className="text-[11px] mt-1 italic">Адрес: _________________________________</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Покупатель:</p>
+                <p className="font-bold underline">
+                  {getCustomerName(printingSale.customerId)}
+                </p>
+                {printingSale.customerId && (
+                  <p className="text-[11px] mt-1 italic">Тел: {getCustomerPhone(printingSale.customerId)}</p>
+                )}
+              </div>
+            </div>
+
+            <table className="w-full border-collapse border border-slate-900 text-sm mb-8">
+              <thead>
+                <tr className="bg-slate-100">
+                  <th className="border border-slate-900 p-2 text-center w-10">№</th>
+                  <th className="border border-slate-900 p-2 text-left">Наименование товара</th>
+                  <th className="border border-slate-900 p-2 text-center w-20">Кол-во</th>
+                  <th className="border border-slate-900 p-2 text-center w-16">Ед.</th>
+                  <th className="border border-slate-900 p-2 text-right w-24">Цена</th>
+                  <th className="border border-slate-900 p-2 text-right w-32">Сумма</th>
+                </tr>
+              </thead>
+              <tbody>
+                {printingSale.items.map((item: any, idx: number) => {
+                  const p = products.find(prod => prod.id === item.productId);
+                  return (
+                    <tr key={idx}>
+                      <td className="border border-slate-900 p-2 text-center">{idx + 1}</td>
+                      <td className="border border-slate-900 p-2">{p?.name || 'Товар удален'}</td>
+                      <td className="border border-slate-900 p-2 text-center font-bold">{item.quantity}</td>
+                      <td className="border border-slate-900 p-2 text-center">{p?.unit || 'шт'}</td>
+                      <td className="border border-slate-900 p-2 text-right">{item.price.toLocaleString()} ₽</td>
+                      <td className="border border-slate-900 p-2 text-right font-black">{(item.price * item.quantity).toLocaleString()} ₽</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={5} className="border border-slate-900 p-2 text-right font-black uppercase text-xs">Итого к оплате:</td>
+                  <td className="border border-slate-900 p-2 text-right font-black text-lg">{printingSale.total.toLocaleString()} ₽</td>
+                </tr>
+              </tfoot>
+            </table>
+
+            <div className="text-sm italic mb-10">
+              <p>Всего наименований {printingSale.items.length}, на сумму {printingSale.total.toLocaleString()} ₽</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-20 pt-10 border-t border-slate-200">
+              <div className="text-center">
+                <p className="border-b border-slate-900 pb-1 font-bold">{ownerName || '________________'}</p>
+                <p className="text-[10px] uppercase font-black text-slate-400 mt-1">Отпустил (Подпись)</p>
+              </div>
+              <div className="text-center">
+                <p className="border-b border-slate-900 pb-1 font-bold">________________</p>
+                <p className="text-[10px] uppercase font-black text-slate-400 mt-1">Получил (Подпись)</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Модальные окна подтверждения и редактирования */}
       {confirmDelete && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 no-print" onClick={(e) => e.stopPropagation()}>
           <div className="bg-white p-8 rounded-[40px] shadow-2xl w-full max-w-sm text-center space-y-6 animate-slide-up">
