@@ -95,7 +95,7 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
           <>
             <h2 className="text-2xl font-black text-slate-800">{user.name}</h2>
             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-              {isClient ? 'Клиент магазина' : (isOwner ? 'Владелец' : user.role)}
+              {isClient ? 'Клиент' : (isOwner ? 'Владелец' : user.role)}
             </p>
           </>
         )}

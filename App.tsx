@@ -175,6 +175,31 @@ const App: React.FC = () => {
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch, orders]);
 
   const handleConfirmOrder = (order: Order) => {
+    let finalCustomerId = order.customerId;
+
+    // Авто-регистрация нового клиента если данные в note
+    if (order.note && order.note.includes('[Имя:')) {
+      const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
+      const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
+      const name = matchName ? matchName[1].trim() : 'Новый клиент';
+      const phone = matchPhone ? matchPhone[1].trim() : '';
+
+      // Проверяем нет ли уже такого клиента по телефону
+      const existing = customers.find(c => c.phone === phone);
+      if (!existing) {
+        const newCust: Customer = {
+          id: `CUST-${Date.now()}`,
+          name: name,
+          phone: phone,
+          debt: 0
+        };
+        setCustomers([newCust, ...customers]);
+        finalCustomerId = newCust.id;
+      } else {
+        finalCustomerId = existing.id;
+      }
+    }
+
     const newSale: Sale = {
       id: `SALE-ORD-${order.id}`,
       employeeId: currentUser?.id || 'admin',
@@ -185,7 +210,7 @@ const App: React.FC = () => {
       total: order.total,
       paymentMethod: 'DEBT',
       date: new Date().toISOString(),
-      customerId: order.customerId
+      customerId: finalCustomerId
     };
 
     const updatedProducts = products.map(p => {
@@ -193,12 +218,12 @@ const App: React.FC = () => {
       return it ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) } : p;
     });
 
-    const updatedOrders = orders.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED' as const } : o);
+    const updatedOrders = orders.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED' as const, customerId: finalCustomerId } : o);
 
     setSales([newSale, ...sales]);
     setProducts(updatedProducts);
     setOrders(updatedOrders);
-    alert('Заказ выдан! Сформирована продажа (в долг).');
+    alert('Заказ выдан! Клиент привязан и сформирована продажа.');
   };
 
   const renderView = () => {

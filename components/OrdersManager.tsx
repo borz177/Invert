@@ -18,7 +18,27 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const getCustomer = (id: string) => customers.find(c => c.id === id);
-  const getCustomerName = (id: string) => getCustomer(id)?.name || 'Неизвестный клиент';
+
+  const getCustomerName = (order: Order) => {
+    const cust = getCustomer(order.customerId);
+    if (cust) return cust.name;
+    // Если клиент временный, берем из примечания
+    if (order.note && order.note.includes('[Имя:')) {
+      const match = order.note.match(/\[Имя:\s*([^,]+)/);
+      return match ? match[1].trim() : 'Новый клиент';
+    }
+    return 'Неизвестный клиент';
+  };
+
+  const extractPhone = (order: Order) => {
+    const cust = getCustomer(order.customerId);
+    if (cust?.phone) return cust.phone;
+    if (order.note && order.note.includes('Тел:')) {
+      const match = order.note.match(/Тел:\s*([^\]]+)/);
+      return match ? match[1].trim() : '';
+    }
+    return '';
+  };
 
   const cleanPhoneForWA = (phone: string) => {
     return phone.replace(/\D/g, '');
@@ -70,7 +90,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
                 <i className={`fas ${o.status === 'NEW' ? 'fa-bell' : o.status === 'CONFIRMED' ? 'fa-check' : 'fa-times'}`}></i>
               </div>
               <div className="min-w-0">
-                <p className="font-bold text-slate-800 truncate">{getCustomerName(o.customerId)}</p>
+                <p className="font-bold text-slate-800 truncate">{getCustomerName(o)}</p>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Заказ №{o.id.slice(-4)} • {o.items.length} поз.</p>
                 <p className="text-[9px] text-slate-300 font-bold uppercase">{new Date(o.date).toLocaleDateString()}</p>
               </div>
@@ -92,7 +112,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-xl font-black text-slate-800">Детали заказа №{selectedOrder.id.slice(-4)}</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{getCustomerName(selectedOrder.customerId)}</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{getCustomerName(selectedOrder)}</p>
               </div>
               <button onClick={() => setSelectedOrder(null)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times"></i></button>
             </div>
@@ -102,7 +122,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Связаться с клиентом</p>
                 <div className="grid grid-cols-2 gap-3">
                   <button
-                    onClick={() => handleCall(getCustomer(selectedOrder.customerId)?.phone || '')}
+                    onClick={() => handleCall(extractPhone(selectedOrder))}
                     className="bg-white border border-slate-200 p-4 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all shadow-sm group"
                   >
                     <div className="w-8 h-8 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center group-hover:bg-blue-500 group-hover:text-white transition-colors">
@@ -111,7 +131,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
                     <span className="text-xs font-black text-slate-700 uppercase tracking-tighter">Позвонить</span>
                   </button>
                   <button
-                    onClick={() => handleWhatsApp(getCustomer(selectedOrder.customerId)?.phone || '')}
+                    onClick={() => handleWhatsApp(extractPhone(selectedOrder))}
                     className="bg-white border border-slate-200 p-4 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all shadow-sm group"
                   >
                     <div className="w-8 h-8 bg-emerald-50 text-emerald-500 rounded-lg flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-colors">
@@ -124,7 +144,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
 
               {selectedOrder.note && (
                 <div className="bg-amber-50 p-5 rounded-[32px] border border-amber-100">
-                  <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Комментарий клиента:</p>
+                  <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Информация о заказе:</p>
                   <p className="text-sm text-amber-900 font-medium leading-relaxed">{selectedOrder.note}</p>
                 </div>
               )}

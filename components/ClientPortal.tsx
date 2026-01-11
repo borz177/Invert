@@ -40,6 +40,9 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const [swipeId, setSwipeId] = useState<string | null>(null);
   const touchStart = useRef<number>(0);
 
+  // Детализация операции
+  const [selectedOpDetail, setSelectedOpDetail] = useState<any | null>(null);
+
   useEffect(() => {
     const fetchMyShops = async () => {
       const linked = await db.getData('linkedShops');
@@ -131,7 +134,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const myHistory = useMemo(() => {
     if (!shopData) return [];
 
-    // Ищем историю либо по локальному ID клиента в магазине, либо по глобальному ID пользователя
     const mySales = shopData.sales.filter(x =>
       !x.isDeleted &&
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
@@ -233,9 +235,12 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
             <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-50">
               <p className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50">История покупок</p>
               {myHistory.map((op: any) => (
-                <div key={op.id} className="p-5 flex justify-between items-center">
+                <div key={op.id} onClick={() => setSelectedOpDetail(op)} className="p-5 flex justify-between items-center active:bg-slate-50 cursor-pointer">
                   <div><p className="font-bold text-slate-800 text-sm">{op.type === 'SALE' ? `Покупка №${op.id.slice(-4)}` : 'Платеж'}</p><p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p></div>
-                  <p className={`font-black text-lg ${op.type === 'PAYMENT' ? 'text-emerald-500' : 'text-slate-800'}`}>{op.type === 'PAYMENT' ? '-' : ''}{(op.amount || op.total).toLocaleString()} ₽</p>
+                  <div className="flex items-center gap-4">
+                    <p className={`font-black text-lg ${op.type === 'PAYMENT' ? 'text-emerald-500' : 'text-slate-800'}`}>{op.type === 'PAYMENT' ? '-' : ''}{(op.amount || op.total).toLocaleString()} ₽</p>
+                    <i className="fas fa-chevron-right text-[10px] text-slate-200"></i>
+                  </div>
                 </div>
               ))}
               {myHistory.length === 0 && <p className="text-center py-20 text-slate-300 italic">История пуста</p>}
@@ -243,10 +248,56 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
           </div>
         )}
 
+        {/* Детализация операции для клиента */}
+        {selectedOpDetail && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-end justify-center p-0" onClick={() => setSelectedOpDetail(null)}>
+            <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
+               <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-xl font-black text-slate-800">{selectedOpDetail.type === 'SALE' ? 'Детали покупки' : 'Детали платежа'}</h3>
+                  <p className="text-[10px] text-slate-400 font-black uppercase">№ {selectedOpDetail.id.slice(-6)} • {new Date(selectedOpDetail.date).toLocaleDateString()}</p>
+                </div>
+                <button onClick={() => setSelectedOpDetail(null)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times"></i></button>
+               </div>
+
+               {selectedOpDetail.type === 'SALE' ? (
+                 <div className="space-y-4">
+                    <div className="space-y-2">
+                       {selectedOpDetail.items.map((item: any, idx: number) => {
+                         const p = shopData.products.find(prod => prod.id === item.productId);
+                         return (
+                           <div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                             <div>
+                               <p className="font-bold text-slate-800 text-sm">{p?.name || 'Товар'}</p>
+                               <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {p?.unit || 'шт'} x {item.price.toLocaleString()} ₽</p>
+                             </div>
+                             <p className="font-black text-slate-800">{(item.quantity * item.price).toLocaleString()} ₽</p>
+                           </div>
+                         );
+                       })}
+                    </div>
+                    <div className="bg-slate-800 p-6 rounded-[32px] text-white flex justify-between items-center mt-4">
+                      <span className="text-[10px] font-black uppercase opacity-60">Сумма чека</span>
+                      <span className="text-2xl font-black">{selectedOpDetail.total.toLocaleString()} ₽</span>
+                    </div>
+                 </div>
+               ) : (
+                 <div className="bg-emerald-50 p-8 rounded-[40px] border border-emerald-100 text-center">
+                    <p className="text-[10px] font-black text-emerald-400 uppercase mb-2">Сумма оплаты</p>
+                    <p className="text-4xl font-black text-emerald-600">{selectedOpDetail.amount.toLocaleString()} ₽</p>
+                    <p className="text-xs text-emerald-400 font-bold mt-4 uppercase">Зачислено на ваш баланс</p>
+                 </div>
+               )}
+               <button onClick={() => setSelectedOpDetail(null)} className="mt-8 w-full py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Закрыть</button>
+            </div>
+          </div>
+        )}
+
         {isOrdering && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-end justify-center">
-            <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[95vh] overflow-y-auto no-scrollbar">
+            <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[95vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-black text-slate-800">Оформление</h3><p className="text-xs text-slate-400 font-bold">Проверьте данные</p></div><button onClick={() => setIsOrdering(false)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full"><i className="fas fa-times"></i></button></div>
+
               {!shopData?.customerIdInShop && (
                 <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 mb-6 space-y-4">
                   <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center">Ваши контакты</p>
@@ -254,6 +305,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
                   <input className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold" placeholder="Телефон" type="tel" value={tempPhone} onChange={e => setTempPhone(e.target.value)} />
                 </div>
               )}
+
               <div className="space-y-3 mb-6">
                 {cart.map(item => (
                   <div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
