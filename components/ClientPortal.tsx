@@ -163,27 +163,53 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const cartTotal = useMemo(() => cart.reduce((acc, i) => acc + i.price * i.quantity, 0), [cart]);
 
   const handleSendOrder = () => {
-    if (cart.length === 0 || !activeShopId) return;
+  if (cart.length === 0 || !activeShopId) return;
 
-    if (!shopData?.customerIdInShop && (!tempName.trim() || !tempPhone.trim())) {
-      alert('Пожалуйста, укажите ваше имя и телефон');
-      return;
+  // Нормализуем телефон: оставляем только цифры
+  let cleanPhone = tempPhone.replace(/\D/g, '');
+
+  // Если номер пустой — ошибка
+  if (!shopData?.customerIdInShop && (!tempName.trim() || !cleanPhone)) {
+    alert('Пожалуйста, укажите ваше имя и телефон');
+    return;
+  }
+
+  // Автоматически добавляем 7 в начало, если:
+  // - номер не начинается с 7 или 8
+  // - и длина после очистки от 10 до 11 цифр
+  if (cleanPhone.length >= 10) {
+    if (cleanPhone.startsWith('8')) {
+      cleanPhone = '7' + cleanPhone.slice(1);
+    } else if (!cleanPhone.startsWith('7')) {
+      // Предполагаем, что это 10-значный номер без кода страны
+      cleanPhone = '7' + cleanPhone;
     }
+    // Если уже начинается с 7 — оставляем как есть
+  }
 
-    const newOrder: Order = {
-      id: Date.now().toString(),
-      customerId: shopData?.customerIdInShop || user.id,
-      items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, price: i.price })),
-      total: cartTotal,
-      status: 'NEW',
-      date: new Date().toISOString(),
-      note: `${shopData?.customerIdInShop ? '' : `[Имя: ${tempName}, Тел: ${tempPhone}] `}${note.trim()}`
-    };
-    db.saveDataOfShop(activeShopId, 'orders', [newOrder, ...(shopData?.orders || [])]);
-    setCart([]);
-    setIsOrdering(false);
-    alert('Заказ отправлен!');
+  // Дополнительная проверка: если после обработки номер короче 11 цифр — ошибка
+  if (cleanPhone.length !== 11 || !cleanPhone.startsWith('7')) {
+    alert('Пожалуйста, введите корректный номер телефона (11 цифр)');
+    return;
+  }
+
+  const formattedPhone = cleanPhone; // или можно отформатировать: +7 (XXX) XXX-XX-XX
+
+  const newOrder: Order = {
+    id: Date.now().toString(),
+    customerId: shopData?.customerIdInShop || user.id,
+    items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, price: i.price })),
+    total: cartTotal,
+    status: 'NEW',
+    date: new Date().toISOString(),
+    note: `${shopData?.customerIdInShop ? '' : `[Имя: ${tempName}, Тел: ${formattedPhone}] `}${note.trim()}`
   };
+
+  db.saveDataOfShop(activeShopId, 'orders', [newOrder, ...(shopData?.orders || [])]);
+  setCart([]);
+  setIsOrdering(false);
+  alert('Заказ отправлен!');
+};
 
   if (activeShopId && shopData) {
     return (
