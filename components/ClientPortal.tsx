@@ -5,21 +5,21 @@ import { db } from '../services/api';
 
 interface ClientPortalProps {
   user: User;
-  products: Product[]; // Это локальные продукты (не используются в глобальном режиме)
-  sales: Sale[]; // Это локальные продажи
+  products: Product[];
+  sales: Sale[];
   orders: Order[];
   onAddOrder: (order: Order) => void;
   onUpdateOrder?: (order: Order) => void;
+  onActiveShopChange?: (name: string | null) => void;
 }
 
-const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateOrder }) => {
+const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateOrder, onActiveShopChange }) => {
   const [activeShopId, setActiveShopId] = useState<string | null>(null);
-  const [shopList, setShopList] = useState<any[]>([]); // Мои добавленные магазины
+  const [shopList, setShopList] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Состояние данных конкретного магазина
   const [shopData, setShopData] = useState<{
     products: Product[];
     sales: Sale[];
@@ -34,7 +34,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const [isOrdering, setIsOrdering] = useState(false);
   const [note, setNote] = useState('');
 
-  // Загружаем список магазинов клиента при старте
   useEffect(() => {
     const fetchMyShops = async () => {
       const linked = await db.getData('linkedShops');
@@ -43,7 +42,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     fetchMyShops();
   }, []);
 
-  // Поиск магазинов
   useEffect(() => {
     const search = async () => {
       if (searchQuery.length < 2) {
@@ -64,15 +62,13 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Загрузка данных магазина при выборе
   useEffect(() => {
     if (!activeShopId) {
       setShopData(null);
+      if (onActiveShopChange) onActiveShopChange(null);
       return;
     }
     const fetchShopInfo = async () => {
-      // Имитируем получение данных именно этого магазина через API
-      // В реальности мы вызываем db.getData с контекстом ownerId = activeShopId
       const [p, s, o, c, sett, customers] = await Promise.all([
         db.getDataOfShop(activeShopId, 'products'),
         db.getDataOfShop(activeShopId, 'sales'),
@@ -82,7 +78,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
         db.getDataOfShop(activeShopId, 'customers')
       ]);
 
-      // Находим себя в списке клиентов этого магазина по email
       const meInShop = customers?.find((c: any) => c.email === user.email);
 
       setShopData({
@@ -93,6 +88,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
         settings: sett || {},
         customerIdInShop: meInShop?.id
       });
+      if (onActiveShopChange) onActiveShopChange(sett?.shopName || 'Магазин');
     };
     fetchShopInfo();
   }, [activeShopId]);
@@ -126,115 +122,133 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     if (!shopData || !shopData.customerIdInShop) return { debt: 0, totalPurchased: 0 };
     const sales = shopData.sales.filter(x => x.customerId === shopData.customerIdInShop && !x.isDeleted);
     const payments = shopData.cashEntries.filter(x => x.customerId === shopData.customerIdInShop && x.type === 'INCOME');
-
     const totalPurchased = sales.reduce((acc, i) => acc + i.total, 0);
     const totalPaid = payments.reduce((acc, i) => acc + i.amount, 0);
-
-    // Долг может быть также в объекте customer
-    return {
-      debt: totalPurchased - totalPaid,
-      totalPurchased
-    };
+    return { debt: totalPurchased - totalPaid, totalPurchased };
   }, [shopData]);
+
+  const cartTotal = useMemo(() => {
+    return cart.reduce((acc, i) => acc + i.price * i.quantity, 0);
+  }, [cart]);
 
   const handleSendOrder = () => {
     if (cart.length === 0 || !activeShopId) return;
     const newOrder: Order = {
       id: Date.now().toString(),
-      customerId: shopData?.customerIdInShop || user.id, // Если продавец еще не добавил нас, используем свой ID
+      customerId: shopData?.customerIdInShop || user.id,
       items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, price: i.price })),
-      total: cart.reduce((acc, i) => acc + i.price * i.quantity, 0),
+      total: cartTotal,
       status: 'NEW',
       date: new Date().toISOString(),
       note: note.trim() || undefined
     };
-    // Отправляем в базу магазина
     db.saveDataOfShop(activeShopId, 'orders', [newOrder, ...(shopData?.orders || [])]);
     setCart([]);
     setIsOrdering(false);
-    alert('Заказ отправлен в магазин!');
+    alert('Заказ успешно отправлен!');
   };
 
-  // ЕСЛИ МАГАЗИН ВЫБРАН
   if (activeShopId && shopData) {
     return (
-      <div className="space-y-6 animate-fade-in pb-20">
-        <div className="flex items-center justify-between bg-white p-4 rounded-3xl border border-slate-100 shadow-sm sticky top-0 z-20">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setActiveShopId(null)} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400">
-              <i className="fas fa-arrow-left"></i>
-            </button>
-            <h2 className="font-black text-slate-800">{shopData.settings.shopName || 'Магазин'}</h2>
-          </div>
-          <div className="flex bg-slate-50 p-1 rounded-2xl">
-            <button onClick={() => setTab('PRODUCTS')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'PRODUCTS' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Витрина</button>
-            <button onClick={() => setTab('HISTORY')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'HISTORY' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>История</button>
-          </div>
+      <div className="space-y-6 animate-fade-in pb-32">
+        {/* ВКЛАДКИ КАК НА ФОТО */}
+        <div className="flex bg-white p-2 rounded-[32px] shadow-sm border border-slate-50">
+          <button
+            onClick={() => setTab('PRODUCTS')}
+            className={`flex-1 py-4 rounded-[28px] text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'PRODUCTS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400'}`}
+          >
+            Заказать товар
+          </button>
+          <button
+            onClick={() => setTab('HISTORY')}
+            className={`flex-1 py-4 rounded-[28px] text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'HISTORY' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400'}`}
+          >
+            Моя история
+          </button>
         </div>
 
         {tab === 'PRODUCTS' ? (
-          <div className="space-y-4">
+          <div className="space-y-6">
+            <div className="relative">
+              <i className="fas fa-search absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"></i>
+              <input
+                className="w-full p-5 pl-14 bg-white rounded-[24px] shadow-sm border border-slate-100 outline-none text-sm placeholder:text-slate-300"
+                placeholder="Поиск товаров в магазине..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+              />
+            </div>
+
             {shopData.settings.showProductsToClients ? (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 {shopData.products.map(p => (
-                  <div key={p.id} className="bg-white p-4 rounded-[32px] border border-slate-100 shadow-sm flex flex-col">
-                    <div className="aspect-square bg-slate-50 rounded-2xl mb-3 overflow-hidden flex items-center justify-center">
-                      {p.image ? <img src={p.image} className="w-full h-full object-cover" /> : <i className="fas fa-image text-2xl text-slate-200"></i>}
+                  <div key={p.id} className="bg-white p-5 rounded-[40px] shadow-sm border border-slate-50 flex flex-col relative group transition-all hover:border-indigo-100">
+                    <span className="absolute top-4 left-5 text-[8px] font-black text-indigo-400 uppercase bg-indigo-50 px-2 py-1 rounded-full">{p.category}</span>
+                    <div className="aspect-square bg-slate-50 rounded-[32px] mb-4 overflow-hidden flex items-center justify-center p-2">
+                      {p.image ? <img src={p.image} className="w-full h-full object-contain" /> : <i className="fas fa-image text-4xl text-slate-100"></i>}
                     </div>
-                    <p className="font-bold text-slate-800 text-sm line-clamp-2 leading-tight mb-2">{p.name}</p>
+                    <div className="space-y-1 mb-4">
+                      <p className="font-bold text-slate-800 text-sm leading-tight line-clamp-2">{p.name}</p>
+                      <p className="text-[10px] text-slate-400 font-bold">Ост: {p.quantity} {p.unit}</p>
+                    </div>
                     <div className="flex justify-between items-center mt-auto">
-                      <span className="font-black text-indigo-600">{p.price.toLocaleString()} ₽</span>
+                      <span className="font-black text-slate-800 text-lg">{p.price.toLocaleString()} ₽</span>
                       <button
                         onClick={() => {
                           const existing = cart.find(i => i.productId === p.id);
                           if (existing) setCart(cart.map(i => i.productId === p.id ? {...i, quantity: i.quantity + 1} : i));
                           else setCart([...cart, { productId: p.id, name: p.name, price: p.price, quantity: 1, unit: p.unit }]);
                         }}
-                        className="w-8 h-8 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center"
+                        className="w-10 h-10 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 active:scale-90 transition-all"
                       >
                         <i className="fas fa-plus text-xs"></i>
                       </button>
                     </div>
                   </div>
                 ))}
-                {shopData.products.length === 0 && <p className="col-span-2 text-center py-20 text-slate-300 italic">Товаров нет</p>}
               </div>
             ) : (
-              <div className="p-10 text-center bg-white rounded-[40px] border border-slate-100">
+              <div className="p-20 text-center bg-white rounded-[40px] border border-slate-100 opacity-50">
                 <i className="fas fa-lock text-4xl text-slate-100 mb-4"></i>
-                <p className="font-bold text-slate-400">Витрина скрыта владельцем</p>
+                <p className="font-bold text-slate-400">Витрина скрыта</p>
               </div>
             )}
 
             {cart.length > 0 && (
-              <button onClick={() => setIsOrdering(true)} className="fixed bottom-24 left-4 right-4 bg-slate-800 text-white p-6 rounded-[32px] flex justify-between items-center shadow-2xl z-50 animate-slide-up">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-black">{cart.length}</div>
-                  <div className="text-left"><p className="text-[10px] opacity-60 uppercase font-black">Ваш заказ</p><p className="text-lg font-black">{cart.reduce((a,i)=>a+i.price*i.quantity,0).toLocaleString()} ₽</p></div>
+              <button onClick={() => setIsOrdering(true)} className="fixed bottom-24 left-4 right-4 bg-indigo-600 text-white p-6 rounded-[32px] flex justify-between items-center shadow-2xl z-50 animate-slide-up hover:bg-indigo-700 transition-colors">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center font-black">{cart.length}</div>
+                  <div className="text-left">
+                    <p className="text-[10px] opacity-60 uppercase font-black tracking-widest">Ваш заказ</p>
+                    <p className="text-lg font-black">{cartTotal.toLocaleString()} ₽</p>
+                  </div>
                 </div>
-                <span className="font-black uppercase tracking-widest text-xs">Оформить</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-black uppercase tracking-widest text-[10px]">Оформить</span>
+                  <i className="fas fa-chevron-right text-[10px]"></i>
+                </div>
               </button>
             )}
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-fade-in">
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-red-50 p-6 rounded-[32px] border border-red-100 text-center">
                 <p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Ваш долг</p>
                 <p className={`text-2xl font-black ${myStats.debt > 0 ? 'text-red-600' : 'text-slate-400'}`}>{myStats.debt.toLocaleString()} ₽</p>
               </div>
               <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 text-center">
-                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Всего закупок</p>
+                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Закуп суммой</p>
                 <p className="text-2xl font-black text-indigo-600">{myStats.totalPurchased.toLocaleString()} ₽</p>
               </div>
             </div>
 
             <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-50">
-              <p className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50">История операций</p>
+              <p className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50">История и платежи</p>
               {myHistory.map((op: any) => (
                 <div key={op.id} className="p-5 flex justify-between items-center">
                   <div>
-                    <p className="font-bold text-slate-800 text-sm">{op.type === 'SALE' ? `Покупка №${op.id.slice(-4)}` : 'Платеж (Оплата долга)'}</p>
+                    <p className="font-bold text-slate-800 text-sm">{op.type === 'SALE' ? `Покупка №${op.id.slice(-4)}` : 'Платеж (Оплата)'}</p>
                     <p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p>
                   </div>
                   <p className={`font-black text-lg ${op.type === 'PAYMENT' ? 'text-emerald-500' : 'text-slate-800'}`}>
@@ -249,21 +263,37 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
 
         {isOrdering && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-end justify-center">
-            <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-6 flex flex-col animate-slide-up">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black text-slate-800">Корзина</h3>
-                <button onClick={() => setIsOrdering(false)} className="w-10 h-10 bg-slate-50 text-slate-400 rounded-full"><i className="fas fa-times"></i></button>
+            <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up">
+              <div className="flex justify-between items-center mb-8">
+                <div>
+                  <h3 className="text-xl font-black text-slate-800">Корзина</h3>
+                  <p className="text-xs text-slate-400 font-bold">Проверьте состав заказа</p>
+                </div>
+                <button onClick={() => setIsOrdering(false)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full active:scale-90 transition-all"><i className="fas fa-times"></i></button>
               </div>
-              <div className="space-y-3 overflow-y-auto max-h-[50vh] no-scrollbar">
+              <div className="space-y-3 overflow-y-auto max-h-[40vh] no-scrollbar mb-6">
                 {cart.map(item => (
                   <div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <div><p className="font-bold text-slate-800 text-sm">{item.name}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit} x {item.price} ₽</p></div>
-                    <button onClick={() => setCart(cart.filter(i=>i.productId!==item.productId))} className="text-red-300"><i className="fas fa-trash"></i></button>
+                    <div>
+                      <p className="font-bold text-slate-800 text-sm">{item.name}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit} x {item.price} ₽</p>
+                    </div>
+                    <button onClick={() => setCart(cart.filter(i=>i.productId!==item.productId))} className="text-red-300 p-2"><i className="fas fa-trash-alt"></i></button>
                   </div>
                 ))}
               </div>
-              <textarea placeholder="Комментарий..." className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl mt-4 text-sm outline-none" value={note} onChange={e=>setNote(e.target.value)} />
-              <button onClick={handleSendOrder} className="w-full bg-indigo-600 text-white p-5 rounded-2xl font-black uppercase tracking-widest mt-6 shadow-xl shadow-indigo-100">Отправить заказ</button>
+              <textarea
+                placeholder="Добавить примечание к заказу..."
+                className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[24px] text-sm outline-none focus:ring-4 focus:ring-indigo-500/5 mb-6 resize-none"
+                rows={3}
+                value={note}
+                onChange={e=>setNote(e.target.value)}
+              />
+              <div className="flex justify-between items-center mb-6 px-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Итого к оплате</span>
+                <span className="text-2xl font-black text-slate-800">{cartTotal.toLocaleString()} ₽</span>
+              </div>
+              <button onClick={handleSendOrder} className="w-full bg-indigo-600 text-white p-6 rounded-[28px] font-black uppercase tracking-widest shadow-xl shadow-indigo-100 active:scale-[0.98] transition-all">Отправить заказ</button>
             </div>
           </div>
         )}
@@ -271,64 +301,66 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     );
   }
 
-  // ГЛАВНЫЙ ЭКРАН (СПИСОК МАГАЗИНОВ И ПОИСК)
   return (
     <div className="space-y-8 animate-fade-in pb-20">
       <div className="space-y-4">
-        <h2 className="text-2xl font-black text-slate-800 px-2">Поиск магазина</h2>
+        <h2 className="text-2xl font-black text-slate-800 px-2 tracking-tight">Поиск магазина</h2>
         <div className="relative">
-          <i className="fas fa-search absolute left-5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+          <i className="fas fa-search absolute left-6 top-1/2 -translate-y-1/2 text-slate-300"></i>
           <input
-            className="w-full p-5 pl-14 bg-white rounded-[24px] shadow-sm border border-slate-100 outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all"
+            className="w-full p-6 pl-14 bg-white rounded-[32px] shadow-sm border border-slate-100 outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all text-sm placeholder:text-slate-300"
             placeholder="Введите название магазина..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
         </div>
 
-        {isSearching && <div className="text-center py-4"><i className="fas fa-spinner fa-spin text-indigo-400"></i></div>}
+        {isSearching && <div className="text-center py-6"><i className="fas fa-spinner fa-spin text-indigo-400"></i></div>}
 
-        <div className="space-y-2">
+        <div className="space-y-3">
           {searchResults.map(shop => (
-            <div key={shop.id} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex justify-between items-center animate-fade-in">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl"><i className="fas fa-store"></i></div>
-                <div><p className="font-black text-slate-800">{shop.shopName}</p><p className="text-[10px] text-slate-400 font-bold uppercase">Владелец: {shop.ownerName}</p></div>
+            <div key={shop.id} className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 flex justify-between items-center animate-fade-in">
+              <div className="flex items-center gap-5">
+                <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl shadow-inner"><i className="fas fa-store"></i></div>
+                <div>
+                  <p className="font-black text-slate-800">{shop.shopName}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Владелец: {shop.ownerName}</p>
+                </div>
               </div>
-              <button onClick={() => addShop(shop)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-100">Добавить</button>
+              <button onClick={() => addShop(shop)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-90 transition-all">Добавить</button>
             </div>
           ))}
         </div>
       </div>
 
       <div className="space-y-4">
-        <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest px-2">Мои магазины</h3>
-        <div className="grid grid-cols-1 gap-3">
+        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-2">Ваши магазины</h3>
+        <div className="grid grid-cols-1 gap-4">
           {shopList.map(shop => (
             <div key={shop.id} className="relative group">
               <button
                 onClick={() => setActiveShopId(shop.id)}
-                className="w-full bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 flex items-center gap-5 hover:border-indigo-300 transition-all text-left"
+                className="w-full bg-white p-7 rounded-[40px] shadow-sm border border-slate-50 flex items-center gap-6 hover:border-indigo-200 transition-all text-left group-active:scale-[0.98]"
               >
-                <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-[22px] flex items-center justify-center text-2xl"><i className="fas fa-store"></i></div>
+                <div className="w-16 h-16 bg-indigo-600 text-white rounded-[24px] flex items-center justify-center text-3xl shadow-lg shadow-indigo-100 transition-transform group-hover:scale-110"><i className="fas fa-store"></i></div>
                 <div className="flex-1">
-                  <p className="text-lg font-black text-slate-800">{shop.shopName}</p>
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Перейти к покупкам</p>
+                  <p className="text-lg font-black text-slate-800 leading-tight">{shop.shopName}</p>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Нажать для перехода</p>
                 </div>
-                <i className="fas fa-chevron-right text-slate-200"></i>
+                <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 group-hover:bg-indigo-50 group-hover:text-indigo-400 transition-colors"><i className="fas fa-chevron-right text-xs"></i></div>
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); removeShop(shop.id); }}
-                className="absolute -top-2 -right-2 w-8 h-8 bg-red-50 text-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border border-red-100"
+                className="absolute -top-1 -right-1 w-9 h-9 bg-red-50 text-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all border border-red-100 shadow-sm active:scale-90"
               >
                 <i className="fas fa-times text-xs"></i>
               </button>
             </div>
           ))}
           {shopList.length === 0 && searchQuery === '' && (
-            <div className="text-center py-20 bg-white/50 rounded-[40px] border border-dashed border-slate-200">
-              <i className="fas fa-search text-4xl text-slate-200 mb-4"></i>
-              <p className="text-slate-400 font-medium">Найдите и добавьте магазины,<br/>чтобы видеть свои покупки</p>
+            <div className="text-center py-24 bg-white/50 rounded-[40px] border border-dashed border-slate-200">
+              <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6"><i className="fas fa-search text-3xl text-slate-200"></i></div>
+              <p className="text-slate-400 font-bold uppercase tracking-widest text-xs px-10 leading-loose">Найдите и добавьте магазины,<br/>чтобы видеть свои покупки</p>
             </div>
           )}
         </div>
