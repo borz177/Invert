@@ -34,6 +34,10 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const [isOrdering, setIsOrdering] = useState(false);
   const [note, setNote] = useState('');
 
+  // Для новых клиентов
+  const [tempName, setTempName] = useState(user.name || '');
+  const [tempPhone, setTempPhone] = useState('');
+
   useEffect(() => {
     const fetchMyShops = async () => {
       const linked = await db.getData('linkedShops');
@@ -133,6 +137,15 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
 
   const handleSendOrder = () => {
     if (cart.length === 0 || !activeShopId) return;
+
+    // Валидация для новых клиентов
+    if (!shopData?.customerIdInShop) {
+      if (!tempName.trim() || !tempPhone.trim()) {
+        alert('Пожалуйста, укажите ваше имя и номер телефона для оформления заказа');
+        return;
+      }
+    }
+
     const newOrder: Order = {
       id: Date.now().toString(),
       customerId: shopData?.customerIdInShop || user.id,
@@ -140,8 +153,9 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
       total: cartTotal,
       status: 'NEW',
       date: new Date().toISOString(),
-      note: note.trim() || undefined
+      note: `${shopData?.customerIdInShop ? '' : `[${tempName}, ${tempPhone}] `}${note.trim()}` || undefined
     };
+
     db.saveDataOfShop(activeShopId, 'orders', [newOrder, ...(shopData?.orders || [])]);
     setCart([]);
     setIsOrdering(false);
@@ -151,7 +165,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   if (activeShopId && shopData) {
     return (
       <div className="space-y-6 animate-fade-in pb-32">
-        {/* ВКЛАДКИ КАК НА ФОТО */}
         <div className="flex bg-white p-2 rounded-[32px] shadow-sm border border-slate-50">
           <button
             onClick={() => setTab('PRODUCTS')}
@@ -263,32 +276,57 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
 
         {isOrdering && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-end justify-center">
-            <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up">
-              <div className="flex justify-between items-center mb-8">
+            <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[95vh] overflow-y-auto no-scrollbar">
+              <div className="flex justify-between items-center mb-6">
                 <div>
-                  <h3 className="text-xl font-black text-slate-800">Корзина</h3>
-                  <p className="text-xs text-slate-400 font-bold">Проверьте состав заказа</p>
+                  <h3 className="text-xl font-black text-slate-800">Оформление заказа</h3>
+                  <p className="text-xs text-slate-400 font-bold">Проверьте состав и данные</p>
                 </div>
                 <button onClick={() => setIsOrdering(false)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full active:scale-90 transition-all"><i className="fas fa-times"></i></button>
               </div>
-              <div className="space-y-3 overflow-y-auto max-h-[40vh] no-scrollbar mb-6">
-                {cart.map(item => (
-                  <div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm">{item.name}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit} x {item.price} ₽</p>
+
+              {!shopData?.customerIdInShop && (
+                <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 mb-6 space-y-4">
+                  <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center">Ваши контакты (Обязательно)</p>
+                  <input
+                    className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold"
+                    placeholder="Ваше Имя"
+                    value={tempName}
+                    onChange={e => setTempName(e.target.value)}
+                  />
+                  <input
+                    className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold"
+                    placeholder="Номер телефона"
+                    type="tel"
+                    value={tempPhone}
+                    onChange={e => setTempPhone(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-3 mb-6">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Состав корзины</p>
+                <div className="space-y-2 max-h-[30vh] overflow-y-auto no-scrollbar pr-1">
+                  {cart.map(item => (
+                    <div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm leading-tight">{item.name}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit} x {item.price} ₽</p>
+                      </div>
+                      <button onClick={() => setCart(cart.filter(i=>i.productId!==item.productId))} className="text-red-300 p-2"><i className="fas fa-trash-alt"></i></button>
                     </div>
-                    <button onClick={() => setCart(cart.filter(i=>i.productId!==item.productId))} className="text-red-300 p-2"><i className="fas fa-trash-alt"></i></button>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
+
               <textarea
-                placeholder="Добавить примечание к заказу..."
+                placeholder="Примечание к заказу..."
                 className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[24px] text-sm outline-none focus:ring-4 focus:ring-indigo-500/5 mb-6 resize-none"
-                rows={3}
+                rows={2}
                 value={note}
                 onChange={e=>setNote(e.target.value)}
               />
+
               <div className="flex justify-between items-center mb-6 px-2">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Итого к оплате</span>
                 <span className="text-2xl font-black text-slate-800">{cartTotal.toLocaleString()} ₽</span>

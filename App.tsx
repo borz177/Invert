@@ -196,11 +196,29 @@ const App: React.FC = () => {
     switch (view) {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={(v) => setView(v as AppView)} orderCount={orders.filter(o => o.status === 'NEW').length}/>;
       case 'PRODUCTS': return <ProductList products={products} categories={categories} canEdit={true} canCreate={true} canDelete={true} showCost={true} onAdd={p => setProducts([p, ...products])} onAddBulk={ps => setProducts([...ps, ...products])} onUpdate={p => setProducts(products.map(x => x.id === p.id ? p : x))} onDelete={id => setProducts(products.filter(x => x.id !== id))} onAddCategory={c => setCategories([...categories, c])} onRenameCategory={(o, n) => { setCategories(categories.map(c => c === o ? n : c)); setProducts(products.map(p => p.category === o ? { ...p, category: n } : p)); }} onDeleteCategory={c => { setCategories(categories.filter(x => x !== c)); setProducts(products.map(p => p.category === c ? { ...p, category: 'Другое' } : p)); }}/>;
+      case 'WAREHOUSE': return <Warehouse products={products} suppliers={suppliers} transactions={transactions} batch={warehouseBatch} setBatch={setWarehouseBatch} onTransaction={t => setTransactions([t, ...transactions])} onTransactionsBulk={ts => setTransactions([...ts, ...transactions])} onAddCashEntry={() => {}}/>;
       case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} currentUserId={currentUser.id} onSale={(s) => setSales([s, ...sales])}/>;
+      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={(e) => setCashEntries([e, ...cashEntries])}/>;
+      case 'REPORTS': return <Reports sales={sales} products={products} transactions={transactions}/>;
+      case 'ALL_OPERATIONS': return <AllOperations sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees} customers={customers} settings={settings} onUpdateTransaction={()=>{}} onDeleteTransaction={()=>{}} onDeleteSale={()=>{}} onDeleteCashEntry={()=>{}} canDelete={true}/>;
+      case 'STOCK_REPORT': return <StockReport products={products}/>;
+      case 'PRICE_LIST': return <PriceList products={products} showCost={true}/>;
+      case 'SUPPLIERS': return <Suppliers suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products} onAdd={s => setSuppliers([...suppliers, s])} onUpdate={s => setSuppliers(suppliers.map(x => x.id === s.id ? s : x))} onDelete={id => setSuppliers(suppliers.filter(x => x.id !== id))}/>;
+      case 'CLIENTS': return <Clients customers={customers} sales={sales} cashEntries={cashEntries} onAdd={c => setCustomers([...customers, c])} onUpdate={c => setCustomers(customers.map(x => x.id === c.id ? c : x))} onDelete={id => setCustomers(customers.filter(x => x.id !== id))}/>;
+      case 'EMPLOYEES': return <Employees employees={employees} sales={sales} onAdd={e => setEmployees([...employees, e])} onUpdate={e => setEmployees(employees.map(x => x.id === e.id ? e : x))} onDelete={id => setEmployees(employees.filter(x => x.id !== id))}/>;
+      case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={()=>{}} onConfirmOrder={()=>{}}/>;
       case 'SETTINGS': return <Settings settings={settings} onUpdate={setSettings} onClear={() => {}}/>;
+      case 'PROFILE': return <Profile user={currentUser as any} sales={sales} onLogout={handleLogout} onUpdateProfile={handleLogin}/>;
       case 'MORE_MENU': return (
         <div className="space-y-4 animate-fade-in pb-10">
-          <button onClick={() => setView('SETTINGS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-2xl flex items-center justify-center"><i className="fas fa-cog"></i></div><span className="font-bold text-slate-700">Настройки</span></button>
+          <h2 className="text-2xl font-black text-slate-800 px-2 mb-6">Еще</h2>
+          <div className="grid grid-cols-1 gap-3">
+            <button onClick={() => setView('ORDERS_MANAGER')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i className="fas fa-clipboard-list"></i></div><span className="font-bold text-slate-700">Заказы клиентов</span></button>
+            <button onClick={() => setView('SUPPLIERS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center"><i className="fas fa-truck-field"></i></div><span className="font-bold text-slate-700">Поставщики</span></button>
+            <button onClick={() => setView('CLIENTS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i className="fas fa-users"></i></div><span className="font-bold text-slate-700">Клиенты</span></button>
+            <button onClick={() => setView('EMPLOYEES')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i className="fas fa-user-tie"></i></div><span className="font-bold text-slate-700">Сотрудники</span></button>
+            <button onClick={() => setView('SETTINGS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-2xl flex items-center justify-center"><i className="fas fa-cog"></i></div><span className="font-bold text-slate-700">Настройки</span></button>
+          </div>
         </div>
       );
       default: return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={(v) => setView(v as AppView)}/>;
@@ -215,25 +233,16 @@ const App: React.FC = () => {
       <header className="bg-white text-indigo-600 p-4 shadow-sm border-b border-slate-100 flex justify-between items-center z-20 shrink-0 h-16">
         <h1 className="text-xl font-black flex items-center gap-2 cursor-pointer" onClick={() => setView(isClient ? 'CLIENT_PORTAL' : 'DASHBOARD')}>
           <i className="fas fa-store text-indigo-600"></i>
-          <span className="text-indigo-900">{isClient ? (activeClientShopName || settings.shopName) : settings.shopName}</span>
+          <span className="text-indigo-900">{isClient ? (activeClientShopName || "") : settings.shopName}</span>
           <div className="w-2 h-2 rounded-full bg-emerald-400 ml-1"></div>
         </h1>
         <div className="flex items-center gap-3">
-          {isClient ? (
-            <div className="bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100 flex items-center gap-2">
-              <div className="w-6 h-6 bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center font-black">
-                {currentUser?.name?.[0].toUpperCase() || 'K'}
-              </div>
-              <span className="text-xs font-bold text-indigo-900 truncate max-w-[80px]">Клиент</span>
+          <button onClick={() => setView('PROFILE')} className="bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 flex items-center gap-2">
+            <div className="w-6 h-6 bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center font-black">
+              {currentUser?.name?.[0].toUpperCase() || 'U'}
             </div>
-          ) : (
-            <button onClick={() => setView('PROFILE')} className="bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 flex items-center gap-2">
-              <div className="w-6 h-6 bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center font-black">
-                {currentUser?.name?.[0].toUpperCase() || 'U'}
-              </div>
-              <span className="text-xs font-bold text-slate-700 truncate max-w-[80px]">{currentUser?.name}</span>
-            </button>
-          )}
+            <span className="text-xs font-bold text-slate-700 truncate max-w-[80px]">{isClient ? 'Клиент' : currentUser?.name}</span>
+          </button>
         </div>
       </header>
 
@@ -255,14 +264,32 @@ const App: React.FC = () => {
       )}
 
       {!isClient && (
-        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 p-2 flex justify-around z-50 h-20">
-          {NAV_ITEMS.map(item => (
-            <button key={item.id} onClick={() => setView(item.id as AppView)} className={`flex flex-col items-center justify-center ${view === item.id ? 'text-indigo-600' : 'text-slate-400'}`}>
-              <i className={`fas ${item.icon} text-lg mb-1`}></i>
-              <span className="text-[9px] font-bold uppercase">{item.label}</span>
-            </button>
-          ))}
-        </nav>
+        <>
+          {isQuickMenuOpen && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-end justify-center pb-24 px-4" onClick={() => setQuickMenuOpen(false)}>
+              <div className="grid grid-cols-2 gap-4 p-6 bg-white rounded-[40px] w-full max-w-sm shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
+                {QUICK_ACTIONS.map(action => (
+                  <button key={action.id} onClick={() => { setView(action.id as AppView); setQuickMenuOpen(false); }} className="flex flex-col items-center justify-center p-4 rounded-3xl active:bg-slate-50 transition-colors">
+                    <div className={`${action.color} text-white w-14 h-14 flex items-center justify-center rounded-2xl shadow-lg mb-2`}><i className={`fas ${action.icon} text-xl`}></i></div>
+                    <span className="text-[10px] font-black text-slate-700 uppercase">{action.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 p-2 flex justify-around z-[70] h-20 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+            {NAV_ITEMS.map(item => item.isCenter ? (
+              <div key={item.id} className="relative -top-6">
+                <button onClick={() => setQuickMenuOpen(!isQuickMenuOpen)} className={`w-14 h-14 ${isQuickMenuOpen ? 'bg-slate-800 rotate-45' : 'bg-indigo-600'} text-white rounded-full flex items-center justify-center shadow-2xl border-4 border-white transition-all duration-300 active:scale-90`}><i className="fas fa-plus text-xl"></i></button>
+              </div>
+            ) : (
+              <button key={item.id} onClick={() => { setView(item.id as AppView); setQuickMenuOpen(false); }} className={`flex flex-col items-center justify-center px-4 rounded-xl transition-all ${view === item.id ? 'text-indigo-600' : 'text-slate-400'}`}>
+                <i className={`fas ${item.icon} text-lg mb-1`}></i>
+                <span className="text-[9px] font-bold uppercase">{item.label}</span>
+              </button>
+            ))}
+          </nav>
+        </>
       )}
     </div>
   );
