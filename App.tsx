@@ -56,7 +56,6 @@ const App: React.FC = () => {
   const isClient = currentUser?.role === 'client';
   const isAdmin = currentUser?.role === 'admin';
 
-  // Права доступа текущего пользователя
   const userPerms = currentUser?.permissions || {
     canEditProduct: true,
     canCreateProduct: true,
@@ -193,23 +192,55 @@ const App: React.FC = () => {
     }
   };
 
-  // --- ЛОГИКА УДАЛЕНИЯ ОПЕРАЦИЙ ---
+  // --- ЛОГИКА РЕДАКТИРОВАНИЯ И УДАЛЕНИЯ ОПЕРАЦИЙ ---
+  const handleUpdateSale = (updatedSale: Sale) => {
+    const oldSale = sales.find(s => s.id === updatedSale.id);
+    if (!oldSale) return;
+
+    // 1. Возвращаем старые количества и сторнируем старый долг
+    let updatedProducts = [...products];
+    oldSale.items.forEach(oldItem => {
+      updatedProducts = updatedProducts.map(p =>
+        p.id === oldItem.productId ? { ...p, quantity: p.quantity + oldItem.quantity } : p
+      );
+    });
+
+    let updatedCustomers = [...customers];
+    if (oldSale.paymentMethod === 'DEBT' && oldSale.customerId) {
+      updatedCustomers = updatedCustomers.map(c =>
+        c.id === oldSale.customerId ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - oldSale.total) } : c
+      );
+    }
+
+    // 2. Применяем новые количества и новый долг
+    updatedSale.items.forEach(newItem => {
+      updatedProducts = updatedProducts.map(p =>
+        p.id === newItem.productId ? { ...p, quantity: Math.max(0, p.quantity - newItem.quantity) } : p
+      );
+    });
+
+    if (updatedSale.paymentMethod === 'DEBT' && updatedSale.customerId) {
+      updatedCustomers = updatedCustomers.map(c =>
+        c.id === updatedSale.customerId ? { ...c, debt: (Number(c.debt) || 0) + updatedSale.total } : c
+      );
+    }
+
+    setProducts(updatedProducts);
+    setCustomers(updatedCustomers);
+    setSales(sales.map(s => s.id === updatedSale.id ? updatedSale : s));
+    alert('Операция обновлена, остатки пересчитаны.');
+  };
+
   const handleDeleteSale = (id: string) => {
     const sale = sales.find(s => s.id === id);
     if (!sale) return;
-
-    // 1. Возврат товара на склад
     setProducts(prev => prev.map(p => {
       const soldItem = sale.items.find(item => item.productId === p.id);
       return soldItem ? { ...p, quantity: p.quantity + soldItem.quantity } : p;
     }));
-
-    // 2. Если была продажа в долг - уменьшаем долг клиента
     if (sale.paymentMethod === 'DEBT' && sale.customerId) {
       setCustomers(prev => prev.map(c => c.id === sale.customerId ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - sale.total) } : c));
     }
-
-    // 3. Удаляем саму продажу
     setSales(prev => prev.filter(s => s.id !== id));
     alert('Продажа удалена, товары вернулись на склад.');
   };
@@ -217,8 +248,6 @@ const App: React.FC = () => {
   const handleDeleteTransaction = (id: string) => {
     const trans = transactions.find(t => t.id === id);
     if (!trans) return;
-
-    // Списание со склада при аннулировании прихода
     if (trans.type === 'IN') {
       setProducts(prev => prev.map(p => p.id === trans.productId ? { ...p, quantity: Math.max(0, p.quantity - trans.quantity) } : p));
       if (trans.paymentMethod === 'DEBT' && trans.supplierId) {
@@ -231,12 +260,9 @@ const App: React.FC = () => {
   const handleDeleteCashEntry = (id: string) => {
     const entry = cashEntries.find(e => e.id === id);
     if (!entry) return;
-
-    // Если удаляем платеж клиента - возвращаем ему долг
     if (entry.type === 'INCOME' && entry.customerId) {
       setCustomers(prev => prev.map(c => c.id === entry.customerId ? { ...c, debt: (Number(c.debt) || 0) + entry.amount } : c));
     }
-    // Если удаляем оплату поставщику - возвращаем наш долг
     if (entry.type === 'EXPENSE' && entry.supplierId) {
       setSuppliers(prev => prev.map(s => s.id === entry.supplierId ? { ...s, debt: (Number(s.debt) || 0) + entry.amount } : s));
     }
@@ -318,14 +344,12 @@ const App: React.FC = () => {
 
   const renderView = () => {
     if (!currentUser) return null;
-
     if (isClient) {
       if (view === 'PROFILE') {
         return <Profile user={currentUser as any} sales={sales} onLogout={handleLogout} onUpdateProfile={handleLogin} />;
       }
       return <ClientPortal user={currentUser} products={products} sales={sales} orders={orders} onAddOrder={(o) => setOrders([o, ...orders])} onActiveShopChange={(name) => setActiveClientShopName(name)} />;
     }
-
     switch (view) {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={(v) => setView(v as AppView)} orderCount={orders.filter(o => o.status === 'NEW').length}/>;
       case 'PRODUCTS': return <ProductList products={products} categories={categories} canEdit={userPerms.canEditProduct} canCreate={userPerms.canCreateProduct} canDelete={userPerms.canDeleteProduct} showCost={userPerms.canShowCost} onAdd={p => setProducts([p, ...products])} onAddBulk={ps => setProducts([...ps, ...products])} onUpdate={p => setProducts(products.map(x => x.id === p.id ? p : x))} onDelete={id => setProducts(products.filter(x => x.id !== id))} onAddCategory={c => setCategories([...categories, c])} onRenameCategory={(o, n) => { setCategories(categories.map(c => c === o ? n : c)); setProducts(products.map(p => p.category === o ? { ...p, category: n } : p)); }} onDeleteCategory={c => { setCategories(categories.filter(x => x !== c)); setProducts(products.map(p => p.category === c ? { ...p, category: 'Другое' } : p)); }}/>;
@@ -338,7 +362,7 @@ const App: React.FC = () => {
       }}/>;
       case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={handleAddCashEntry}/>;
       case 'REPORTS': return <Reports sales={sales} products={products} transactions={transactions}/>;
-      case 'ALL_OPERATIONS': return <AllOperations sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees} customers={customers} settings={settings} onUpdateTransaction={()=>{}} onDeleteTransaction={handleDeleteTransaction} onDeleteSale={handleDeleteSale} onDeleteCashEntry={handleDeleteCashEntry} canDelete={isAdmin}/>;
+      case 'ALL_OPERATIONS': return <AllOperations sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees} customers={customers} settings={settings} onUpdateTransaction={()=>{}} onDeleteTransaction={handleDeleteTransaction} onDeleteSale={handleDeleteSale} onDeleteCashEntry={handleDeleteCashEntry} onUpdateSale={handleUpdateSale} canDelete={isAdmin}/>;
       case 'STOCK_REPORT': return <StockReport products={products}/>;
       case 'PRICE_LIST': return <PriceList products={products} showCost={userPerms.canShowCost}/>;
       case 'SUPPLIERS': return <Suppliers suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products} onAdd={s => setSuppliers([...suppliers, s])} onUpdate={s => setSuppliers(suppliers.map(x => x.id === s.id ? s : x))} onDelete={id => setSuppliers(suppliers.filter(x => x.id !== id))}/>;
@@ -349,11 +373,11 @@ const App: React.FC = () => {
       case 'PROFILE': return <Profile user={currentUser as any} sales={sales} onLogout={handleLogout} onUpdateProfile={handleLogin}/>;
       case 'MORE_MENU': return (
         <div className="space-y-4 animate-fade-in pb-10">
-
+          <h2 className="text-2xl font-black text-slate-800 px-2 mb-6">Еще</h2>
           <div className="grid grid-cols-1 gap-3">
             <button onClick={() => setView('ORDERS_MANAGER')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i className="fas fa-clipboard-list"></i></div><span className="font-bold text-slate-700">Заказы клиентов</span></button>
-             <button onClick={() => setView('SUPPLIERS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center"><i className="fas fa-truck-field"></i></div><span className="font-bold text-slate-700">Поставщики</span></button>
-             <button onClick={() => setView('CLIENTS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i className="fas fa-users"></i></div><span className="font-bold text-slate-700">Клиенты</span></button>
+            <button onClick={() => setView('SUPPLIERS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center"><i className="fas fa-truck-field"></i></div><span className="font-bold text-slate-700">Поставщики</span></button>
+            <button onClick={() => setView('CLIENTS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i className="fas fa-users"></i></div><span className="font-bold text-slate-700">Клиенты</span></button>
             <button onClick={() => setView('EMPLOYEES')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i className="fas fa-user-tie"></i></div><span className="font-bold text-slate-700">Сотрудники</span></button>
             <button onClick={() => setView('SETTINGS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-2xl flex items-center justify-center"><i className="fas fa-cog"></i></div><span className="font-bold text-slate-700">Настройки</span></button>
           </div>
