@@ -23,6 +23,17 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.name) {
+      // Проверка на уникальность логина
+      if (formData.login) {
+        const isDuplicate = customers.some(c =>
+          c.login === formData.login && (!editingClient || c.id !== editingClient.id)
+        );
+        if (isDuplicate) {
+          alert('Этот логин уже занят другим клиентом. Пожалуйста, выберите другой.');
+          return;
+        }
+      }
+
       if (editingClient) {
         onUpdate({ ...editingClient, ...formData } as Customer);
       } else {
@@ -136,8 +147,9 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
 
               <div className="p-4 bg-indigo-50 rounded-3xl space-y-3">
                 <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center">Доступ в личный кабинет</p>
-                <input className="w-full p-3 bg-white border border-indigo-100 rounded-xl text-xs font-bold" placeholder="Логин для входа" value={formData.login || ''} onChange={e => setFormData({...formData, login: e.target.value})} />
-                <input className="w-full p-3 bg-white border border-indigo-100 rounded-xl text-xs font-bold" placeholder="Пароль" value={formData.password || ''} onChange={e => setFormData({...formData, password: e.target.value})} />
+                <input required={!!formData.password} className="w-full p-3 bg-white border border-indigo-100 rounded-xl text-xs font-bold" placeholder="Логин для входа" value={formData.login || ''} onChange={e => setFormData({...formData, login: e.target.value})} />
+                <input required={!!formData.login} className="w-full p-3 bg-white border border-indigo-100 rounded-xl text-xs font-bold" placeholder="Пароль" value={formData.password || ''} onChange={e => setFormData({...formData, password: e.target.value})} />
+                <p className="text-[8px] text-slate-400 italic text-center">Логин и пароль должны быть уникальными для каждого клиента</p>
               </div>
             </div>
             <div className="flex gap-3">

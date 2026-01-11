@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Product, Transaction, Sale, CashEntry, AppView, Supplier, Customer, Employee, AppSettings, User, Order } from './types';
+import { Product, Transaction, Sale, CashEntry, AppView, Supplier, Customer, Employee, AppSettings, User, Order, LinkedShop } from './types';
 import { NAV_ITEMS, QUICK_ACTIONS, INITIAL_CATEGORIES } from './constants';
 import { db } from './services/api';
 import Dashboard from './components/Dashboard';
@@ -82,6 +82,20 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSwitchShop = async (shop: LinkedShop) => {
+    setIsLoading(true);
+    try {
+      const user = await db.auth.login(shop.login, shop.password);
+      handleLogin(user);
+      // Сброс состояния данных для нового магазина
+      isDataLoaded.current = false;
+    } catch (err: any) {
+      alert('Ошибка при переключении магазина: ' + err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleLogout = () => {
     setCurrentUser(null);
     setIsAuthenticated(false);
@@ -155,7 +169,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (isAuthenticated) fetchAllData();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, currentUser?.ownerId]); // Рефетч при смене владельца (магазина)
 
   useEffect(() => {
     if (!isDataLoaded.current || isLoading || !isAuthenticated) return;
@@ -282,7 +296,14 @@ const App: React.FC = () => {
     if (isClient) {
       if (view === 'PROFILE') {
         const clientData = customers.find(c => c.id === currentUser.id);
-        return <Profile user={{id: currentUser.id, name: currentUser.name, role: 'client', login: currentUser.email, password: '', salary: 0, revenuePercent: 0, profitPercent: 0, permissions: {}, debt: clientData?.debt || 0} as any} sales={sales} onLogout={handleLogout} onUpdateProfile={handleLogin}/>;
+        return <Profile
+          user={{id: currentUser.id, name: currentUser.name, role: 'client', login: currentUser.email, password: '', salary: 0, revenuePercent: 0, profitPercent: 0, permissions: {}, debt: clientData?.debt || 0} as any}
+          sales={sales}
+          onLogout={handleLogout}
+          onUpdateProfile={handleLogin}
+          onSwitchShop={handleSwitchShop}
+          currentShopName={settings.shopName}
+        />;
       }
       return <ClientPortal user={currentUser} products={products} sales={sales} orders={orders} onAddOrder={(o) => setOrders([o, ...orders])} onUpdateOrder={handleUpdateOrder}/>;
     }

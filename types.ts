@@ -6,6 +6,14 @@ export interface User {
   role: 'admin' | 'user' | 'кассир' | 'менеджер' | 'кладовщик' | 'управляющий' | 'client';
   ownerId?: string;
   permissions?: any;
+  linkedShops?: LinkedShop[];
+}
+
+export interface LinkedShop {
+  shopName: string;
+  login: string;
+  password: string;
+  ownerId: string;
 }
 
 export interface Product {

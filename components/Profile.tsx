@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { Employee, Sale, User } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Employee, Sale, User, LinkedShop } from '../types';
 import { db } from '../services/api';
 
 interface ProfileProps {
@@ -8,6 +8,8 @@ interface ProfileProps {
   sales: Sale[];
   onLogout: () => void;
   onUpdateProfile?: (user: User) => void;
+  onSwitchShop?: (shop: LinkedShop) => void;
+  currentShopName?: string;
 }
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -17,13 +19,27 @@ const PERMISSION_LABELS: Record<string, string> = {
   canShowCost: 'Видеть себестоимость'
 };
 
-const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfile }) => {
+const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfile, onSwitchShop, currentShopName }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user?.name || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Состояния для управления списком магазинов
+  const [linkedShops, setLinkedShops] = useState<LinkedShop[]>([]);
+  const [showAddShop, setShowAddShop] = useState(false);
+  const [addShopLogin, setAddShopLogin] = useState('');
+  const [addShopPass, setAddShopPass] = useState('');
+  const [isAddingShop, setIsAddingShop] = useState(false);
+
+  useEffect(() => {
+    if (user && (user.role as string) === 'client') {
+      const saved = localStorage.getItem(`linked_shops_${user.login}`);
+      if (saved) setLinkedShops(JSON.parse(saved));
+    }
+  }, [user]);
 
   if (!user) return null;
 
@@ -53,13 +69,59 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
     }
   };
 
+  const handleAddShop = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAddingShop(true);
+    try {
+      // Пытаемся залогиниться, чтобы проверить данные и получить shopName
+      const testUser = await db.auth.login(addShopLogin, addShopPass);
+
+      // Имитируем запрос settings для получения названия магазина
+      const settings = await db.getData('settings');
+      const shopName = settings?.shopName || 'Магазин';
+
+      const newShop: LinkedShop = {
+        shopName,
+        login: addShopLogin,
+        password: addShopPass,
+        ownerId: testUser.ownerId || testUser.id
+      };
+
+      // Проверка на дубликаты в списке магазинов клиента
+      if (linkedShops.some(s => s.ownerId === newShop.ownerId)) {
+        alert('Этот магазин уже добавлен в ваш список');
+        return;
+      }
+
+      const updatedShops = [...linkedShops, newShop];
+      setLinkedShops(updatedShops);
+      localStorage.setItem(`linked_shops_${user.login}`, JSON.stringify(updatedShops));
+
+      setShowAddShop(false);
+      setAddShopLogin('');
+      setAddShopPass('');
+      alert('Магазин успешно добавлен!');
+    } catch (err: any) {
+      alert('Ошибка: ' + err.message);
+    } finally {
+      setIsAddingShop(false);
+    }
+  };
+
+  const handleRemoveShop = (ownerId: string) => {
+    if (window.confirm('Удалить этот магазин из списка?')) {
+      const updated = linkedShops.filter(s => s.ownerId !== ownerId);
+      setLinkedShops(updated);
+      localStorage.setItem(`linked_shops_${user.login}`, JSON.stringify(updated));
+    }
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-10">
       <div className="bg-white p-8 rounded-[40px] shadow-sm border border-slate-100 text-center relative">
         <button onClick={onLogout} className="absolute top-6 right-6 w-10 h-10 bg-red-50 text-red-500 rounded-full flex items-center justify-center active:bg-red-100 transition-colors" title="Выйти">
           <i className="fas fa-sign-out-alt"></i>
         </button>
-        {/* Кнопка редактирования скрыта для клиентов */}
         {isOwner && !isEditing && (
           <button onClick={() => setIsEditing(true)} className="absolute top-6 left-6 w-10 h-10 bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center active:bg-indigo-100 transition-colors" title="Редактировать">
             <i className="fas fa-pen text-xs"></i>
@@ -103,17 +165,98 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-emerald-50 p-6 rounded-[32px] border border-emerald-100 shadow-sm">
+        <div className="bg-emerald-50 p-6 rounded-[32px] border border-emerald-100 shadow-sm text-center">
           <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">{isClient ? 'Закупок сегодня' : 'Продаж сегодня'}</p>
           <p className="text-2xl font-black text-emerald-700">{isClient ? purchasesTodayCount : sales.filter(s => s.date.startsWith(today) && !s.isDeleted).length}</p>
         </div>
-        <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 shadow-sm">
+        <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 shadow-sm text-center">
           <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">{isClient ? 'Ваш долг' : 'Ваша выручка'}</p>
           <p className={`text-2xl font-black ${isClient && clientDebt > 0 ? 'text-red-600' : 'text-indigo-700'}`}>
             {(isClient ? clientDebt : totalAmountSales).toLocaleString()} ₽
           </p>
         </div>
       </div>
+
+      {isClient && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center px-2">
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Мои магазины</h3>
+            <button onClick={() => setShowAddShop(true)} className="text-[10px] font-black text-indigo-600 uppercase bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100">+ Добавить</button>
+          </div>
+
+          <div className="space-y-3">
+            <div className="bg-indigo-600 p-5 rounded-3xl text-white shadow-lg border border-indigo-700 flex justify-between items-center group">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-xl"><i className="fas fa-store"></i></div>
+                <div>
+                  <p className="font-black text-sm">{currentShopName}</p>
+                  <p className="text-[8px] font-bold uppercase opacity-60">Текущий магазин</p>
+                </div>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"><i className="fas fa-check"></i></div>
+            </div>
+
+            {linkedShops.map(shop => (
+              <div key={shop.ownerId} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex justify-between items-center hover:border-indigo-200 transition-all group">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-slate-50 text-indigo-500 rounded-xl flex items-center justify-center text-xl group-hover:bg-indigo-50 transition-colors"><i className="fas fa-store-alt"></i></div>
+                  <div>
+                    <p className="font-bold text-slate-800 text-sm">{shop.shopName}</p>
+                    <p className="text-[8px] text-slate-400 font-black uppercase tracking-widest">Логин: {shop.login}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onSwitchShop?.(shop)}
+                    className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
+                  >
+                    Перейти
+                  </button>
+                  <button
+                    onClick={() => handleRemoveShop(shop.ownerId)}
+                    className="w-9 h-9 text-red-200 hover:text-red-500 transition-colors"
+                  >
+                    <i className="fas fa-trash-alt text-xs"></i>
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {linkedShops.length === 0 && (
+              <div className="p-8 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                <p className="text-xs text-slate-400 font-medium italic">У вас пока нет других магазинов. Добавьте их по логину и паролю.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showAddShop && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-[40px] shadow-2xl w-full max-w-sm space-y-6 animate-slide-up">
+            <div className="text-center">
+              <h3 className="text-xl font-black text-slate-800">Добавить магазин</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Введите данные вашего аккаунта</p>
+            </div>
+            <form onSubmit={handleAddShop} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Логин (Email)</label>
+                <input required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="example@mail.com" value={addShopLogin} onChange={e => setAddShopLogin(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Пароль</label>
+                <input required type="password" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="••••••••" value={addShopPass} onChange={e => setAddShopPass(e.target.value)} />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowAddShop(false)} className="flex-1 py-4 font-bold text-slate-400">Отмена</button>
+                <button type="submit" disabled={isAddingShop} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-100 flex items-center justify-center">
+                  {isAddingShop ? <i className="fas fa-spinner fa-spin"></i> : 'ДОБАВИТЬ'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {!isClient && (
         <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
