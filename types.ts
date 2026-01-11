@@ -21,6 +21,7 @@ export interface Product {
   unit: 'шт' | 'кг' | 'упак' | 'ящик' | 'л' | 'мл';
   image?: string;
   type?: 'PRODUCT' | 'SERVICE'; // PRODUCT - списывается со склада, SERVICE - нет
+  description?: string;
 }
 
 export interface Supplier {
