@@ -86,10 +86,10 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
         db.getDataOfShop(activeShopId, 'customers')
       ]);
 
-      // Улучшенная логика поиска "себя" в базе магазина
+      // Максимально точный поиск клиента в базе магазина (по Email или Имени без учета регистра)
       const meInShop = customers?.find((c: any) =>
-        (c.email?.toLowerCase() === user.email?.toLowerCase() && user.email) ||
-        (c.name?.toLowerCase() === user.name?.toLowerCase())
+        (c.email?.toLowerCase().trim() === user.email?.toLowerCase().trim() && user.email) ||
+        (c.name?.toLowerCase().trim() === user.name?.toLowerCase().trim())
       );
 
       setShopData({
@@ -137,7 +137,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const myHistory = useMemo(() => {
     if (!shopData) return [];
 
-    // Поиск истории по ID клиента в магазине или глобальному ID
+    // Ищем историю: по внутреннему ID в магазине ИЛИ по глобальному ID пользователя (если продавец подтверждал онлайн заказ)
     const mySales = shopData.sales.filter(x =>
       !x.isDeleted &&
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
@@ -165,7 +165,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const handleSendOrder = () => {
     if (cart.length === 0 || !activeShopId) return;
 
-    // Если клиент не найден в базе магазина, требуем имя и телефон
     if (!shopData?.customerIdInShop && (!tempName.trim() || !tempPhone.trim())) {
       alert('Пожалуйста, укажите ваше имя и телефон');
       return;
@@ -304,7 +303,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
             <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[95vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-black text-slate-800">Оформление</h3><p className="text-xs text-slate-400 font-bold">Проверьте данные</p></div><button onClick={() => setIsOrdering(false)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full"><i className="fas fa-times"></i></button></div>
 
-              {/* Скрываем контакты, если клиент уже найден в базе магазина */}
+              {/* Автоматически скрываем блок контактов, если клиент успешно найден в базе магазина */}
               {!shopData?.customerIdInShop && (
                 <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 mb-6 space-y-4">
                   <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center">Ваши контакты</p>

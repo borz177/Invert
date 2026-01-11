@@ -27,7 +27,7 @@ const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, cus
   const lowStock = products.filter(p => p.quantity <= p.minStock);
   const cashBalance = cashEntries.reduce((acc, e) => acc + (e.type === 'INCOME' ? e.amount : -e.amount), 0);
 
-  // Явный расчет долгов
+  // Корректный расчет суммарных долгов
   const totalDebtFromClients = customers.reduce((acc, c) => acc + (Number(c.debt) || 0), 0);
   const totalDebtToSuppliers = suppliers.reduce((acc, s) => acc + (Number(s.debt) || 0), 0);
 
