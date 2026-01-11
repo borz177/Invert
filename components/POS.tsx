@@ -5,8 +5,8 @@ import { Product, Sale, Customer } from '../types';
 interface POSProps {
   products: Product[];
   customers: Customer[];
-  cart: Array<{ id: string; name: string; price: number; cost: number; quantity: number; unit: string }>;
-  setCart: React.Dispatch<React.SetStateAction<Array<{ id: string; name: string; price: number; cost: number; quantity: number; unit: string }>>>;
+  cart: Array<{ id: string; name: string; price: number; cost: number; quantity: number; unit: string; type?: 'PRODUCT' | 'SERVICE' }>;
+  setCart: React.Dispatch<React.SetStateAction<Array<{ id: string; name: string; price: number; cost: number; quantity: number; unit: string; type?: 'PRODUCT' | 'SERVICE' }>>>;
   onSale: (sale: Sale) => void;
   currentUserId?: string;
 }
@@ -22,7 +22,7 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
   const [inputPrice, setInputPrice] = useState<number>(0);
 
   const openQtyModal = (p: Product) => {
-    if (p.quantity <= 0) {
+    if (p.type !== 'SERVICE' && p.quantity <= 0) {
       alert("Товар закончился на складе!");
       return;
     }
@@ -35,7 +35,12 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
     if (!qtyModalProduct) return;
     if (inputQty <= 0) { alert("Введите корректное количество"); return; }
     if (inputPrice < 0) { alert("Цена не может быть отрицательной"); return; }
-    if (inputQty > qtyModalProduct.quantity) { alert(`Недостаточно товара! В наличии: ${qtyModalProduct.quantity}`); return; }
+
+    // Проверка остатка только для PRODUCT
+    if (qtyModalProduct.type !== 'SERVICE' && inputQty > qtyModalProduct.quantity) {
+      alert(`Недостаточно товара! В наличии: ${qtyModalProduct.quantity}`);
+      return;
+    }
 
     const p = qtyModalProduct;
     const existingIndex = cart.findIndex(item => item.id === p.id && item.price === inputPrice);
@@ -51,7 +56,8 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
         price: inputPrice,
         cost: p.cost,
         quantity: inputQty,
-        unit: p.unit || 'шт'
+        unit: p.unit || 'шт',
+        type: p.type || 'PRODUCT'
       }]);
     }
     setQtyModalProduct(null);
@@ -63,7 +69,11 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
       if (item.id === id && item.price === price) {
         const product = products.find(p => p.id === id);
         const newQty = Math.max(1, item.quantity + delta);
-        if (product && newQty > product.quantity) { alert("Больше нет в наличии!"); return item; }
+        // Проверка лимита только для товаров
+        if (product && product.type !== 'SERVICE' && newQty > product.quantity) {
+          alert("Больше нет в наличии!");
+          return item;
+        }
         return { ...item, quantity: newQty };
       }
       return item;
@@ -94,7 +104,7 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
       customerId: selectedCustomerId || undefined
     });
 
-    setCart([]); // Очистка корзины после оформления
+    setCart([]);
     setSelectedCustomerId('');
     setIsCartOpen(false);
     alert('Продажа успешно оформлена!');
@@ -110,7 +120,7 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
         <h2 className="text-2xl font-bold text-slate-800">
           {selectedCategory && !searchTerm ? (
             <button onClick={() => setSelectedCategory(null)} className="flex items-center gap-2 hover:text-indigo-600 transition-colors"><i className="fas fa-arrow-left text-sm"></i> {selectedCategory}</button>
-          ) : 'Продажа'}
+          ) : 'Оформление'}
         </h2>
         <button onClick={() => setIsCartOpen(true)} className={`relative p-4 rounded-2xl shadow-md border border-slate-100 transition-all ${cart.length > 0 ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-600'}`}>
           <i className="fas fa-shopping-basket text-xl"></i>
@@ -120,7 +130,7 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
 
       <div className="relative">
         <i className="fas fa-search absolute left-4 top-4 text-slate-400"></i>
-        <input className="w-full p-4 pl-12 rounded-2xl bg-white shadow-sm border border-slate-100 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" placeholder="Поиск..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+        <input className="w-full p-4 pl-12 rounded-2xl bg-white shadow-sm border border-slate-100 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" placeholder="Поиск товара или услуги..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
       </div>
 
       {!selectedCategory && !searchTerm && (
@@ -129,7 +139,7 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
             <button key={cat} onClick={() => setSelectedCategory(cat)} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center hover:border-indigo-300 active:scale-95 transition-all group">
               <div className="w-16 h-16 bg-indigo-50 text-indigo-500 rounded-3xl flex items-center justify-center mb-3 group-hover:bg-indigo-600 group-hover:text-white transition-colors shadow-sm"><i className="fas fa-folder text-3xl"></i></div>
               <h3 className="font-black text-slate-800 text-sm truncate w-full">{cat}</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{products.filter(p => p.category === cat).length} товаров</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{products.filter(p => p.category === cat).length} поз.</p>
             </button>
           ))}
         </div>
@@ -140,13 +150,20 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
           {(searchTerm ? filteredBySearch : activeProducts).map(p => (
             <button key={p.id} onClick={() => openQtyModal(p)} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-left active:scale-95 hover:border-indigo-300 transition-all flex flex-col justify-between min-h-[140px] animate-fade-in group">
               <div>
-                <div className="text-[10px] text-slate-400 uppercase font-black mb-1">{p.category}</div>
+                <div className="flex justify-between items-start">
+                  <div className="text-[10px] text-slate-400 uppercase font-black mb-1">{p.category}</div>
+                  {p.type === 'SERVICE' && <i className="fas fa-bolt text-emerald-500 text-[10px]"></i>}
+                </div>
                 <div className="font-bold text-slate-800 line-clamp-2 leading-tight text-sm group-hover:text-indigo-600">{p.name}</div>
               </div>
               <div className="flex justify-between items-end mt-2">
                 <div>
-                  <div className="text-[10px] text-slate-400 font-medium">Ост: {p.quantity} {p.unit}</div>
-                  <div className="text-[10px] text-slate-400 font-medium opacity-50">#{p.sku.slice(-4)}</div>
+                  {p.type === 'SERVICE' ? (
+                    <div className="text-[9px] text-emerald-600 font-black uppercase">Услуга</div>
+                  ) : (
+                    <div className="text-[10px] text-slate-400 font-medium">Ост: {p.quantity} {p.unit}</div>
+                  )}
+                  <div className="text-[9px] text-slate-300 font-medium opacity-50">#{p.sku.slice(-4)}</div>
                 </div>
                 <div className="text-indigo-600 font-black text-lg">{p.price.toLocaleString()} ₽</div>
               </div>
@@ -155,12 +172,16 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
         </div>
       )}
 
+      {/* Остальные модалки аналогичны, за исключением проверки лимитов для SERVICE */}
       {qtyModalProduct && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-sm rounded-[40px] shadow-2xl p-8 animate-slide-up space-y-6">
             <div>
-              <h3 className="text-xl font-black text-slate-800 mb-1">{qtyModalProduct.name}</h3>
-              <p className="text-xs text-slate-400">В наличии: <span className="font-bold text-indigo-600">{qtyModalProduct.quantity} {qtyModalProduct.unit}</span></p>
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="text-xl font-black text-slate-800">{qtyModalProduct.name}</h3>
+                {qtyModalProduct.type === 'SERVICE' && <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[8px] font-black uppercase rounded">Услуга</span>}
+              </div>
+              {qtyModalProduct.type !== 'SERVICE' && <p className="text-xs text-slate-400">В наличии: <span className="font-bold text-indigo-600">{qtyModalProduct.quantity} {qtyModalProduct.unit}</span></p>}
             </div>
 
             <div className="space-y-4">
@@ -169,21 +190,14 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
                 <div className="flex items-center bg-slate-50 border border-slate-200 rounded-3xl h-16 shadow-inner">
                   <button onClick={() => setInputQty(Math.max(1, inputQty - 1))} className="w-14 h-full text-slate-400 text-lg active:bg-slate-100 transition-colors"><i className="fas fa-minus"></i></button>
                   <input type="number" step="any" inputMode="decimal" className="flex-1 text-center bg-transparent outline-none font-black text-xl text-slate-800" value={inputQty === 0 ? '' : inputQty} onChange={e => setInputQty(parseFloat(e.target.value) || 0)}/>
-                  <button onClick={() => setInputQty(Math.min(qtyModalProduct.quantity, inputQty + 1))} className="w-14 h-full text-slate-400 text-lg active:bg-slate-100 transition-colors"><i className="fas fa-plus"></i></button>
+                  <button onClick={() => setInputQty(qtyModalProduct.type === 'SERVICE' ? inputQty + 1 : Math.min(qtyModalProduct.quantity, inputQty + 1))} className="w-14 h-full text-slate-400 text-lg active:bg-slate-100 transition-colors"><i className="fas fa-plus"></i></button>
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Цена за единицу (₽)</label>
+                <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Цена за {qtyModalProduct.unit} (₽)</label>
                 <div className="relative">
-                  <input
-                    type="number"
-                    step="0.01"
-                    inputMode="decimal"
-                    className="w-full p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl outline-none font-black text-xl text-indigo-600 text-center focus:ring-4 focus:ring-indigo-500/5 transition-all"
-                    value={inputPrice === 0 ? '' : inputPrice}
-                    onChange={e => setInputPrice(parseFloat(e.target.value) || 0)}
-                  />
+                  <input type="number" step="0.01" inputMode="decimal" className="w-full p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl outline-none font-black text-xl text-indigo-600 text-center focus:ring-4 focus:ring-indigo-500/5 transition-all" value={inputPrice === 0 ? '' : inputPrice} onChange={e => setInputPrice(parseFloat(e.target.value) || 0)}/>
                   <div className="absolute right-4 top-1/2 -translate-y-1/2 text-indigo-300 font-black">₽</div>
                 </div>
               </div>
@@ -191,7 +205,7 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
 
             <div className="flex gap-3 pt-2">
               <button onClick={() => setQtyModalProduct(null)} className="flex-1 py-4 font-bold text-slate-400">Отмена</button>
-              <button onClick={confirmAddToCart} className="flex-1 bg-indigo-600 text-white py-4 rounded-3xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all uppercase tracking-widest text-xs">В корзину</button>
+              <button onClick={confirmAddToCart} className="flex-1 bg-indigo-600 text-white py-4 rounded-3xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all uppercase tracking-widest text-xs">Добавить</button>
             </div>
           </div>
         </div>
@@ -203,7 +217,7 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h3 className="text-xl font-bold text-slate-800">Корзина</h3>
-                <p className="text-xs text-slate-400 font-medium uppercase">{cart.length} позиции</p>
+                <p className="text-xs text-slate-400 font-medium uppercase">{cart.length} поз.</p>
               </div>
               <button onClick={() => setIsCartOpen(false)} className="bg-slate-50 w-12 h-12 rounded-full flex items-center justify-center text-slate-400"><i className="fas fa-times text-xl"></i></button>
             </div>
@@ -220,10 +234,11 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
               {cart.map((item, idx) => (
                 <div key={`${item.id}-${item.price}-${idx}`} className="flex justify-between items-center bg-slate-50 p-4 rounded-3xl border border-slate-100">
                   <div className="flex-1 min-w-0 pr-4">
-                    <p className="font-bold text-slate-800 truncate text-sm">{item.name}</p>
-                    <div className="flex items-center gap-2">
-                      <p className="text-xs text-indigo-500 font-bold">{item.price.toLocaleString()} ₽ / {item.unit}</p>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <p className="font-bold text-slate-800 truncate text-sm">{item.name}</p>
+                      {item.type === 'SERVICE' && <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1 rounded uppercase font-black">Усл</span>}
                     </div>
+                    <p className="text-xs text-indigo-500 font-bold">{item.price.toLocaleString()} ₽ / {item.unit}</p>
                   </div>
                   <div className="flex items-center space-x-2">
                     <div className="flex items-center bg-white rounded-2xl border border-slate-200 shadow-sm">
@@ -253,7 +268,7 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
                 <div className="grid grid-cols-3 gap-2">
                   <button onClick={() => checkout('CASH')} className="bg-slate-800 text-white p-4 rounded-2xl font-black shadow-lg flex flex-col items-center active:scale-95 transition-transform"><i className="fas fa-money-bill-wave text-lg mb-1"></i><span className="text-[9px] uppercase">Нал</span></button>
                   <button onClick={() => checkout('CARD')} className="bg-indigo-600 text-white p-4 rounded-2xl font-black shadow-lg flex flex-col items-center active:scale-95 transition-transform"><i className="fas fa-credit-card text-lg mb-1"></i><span className="text-[9px] uppercase">Карта</span></button>
-                  <button onClick={() => checkout('DEBT')} disabled={!selectedCustomerId} className="bg-red-50 text-white p-4 rounded-2xl font-black shadow-lg flex flex-col items-center active:scale-95 transition-transform disabled:opacity-40 bg-red-500"><i className="fas fa-hand-holding-usd text-lg mb-1"></i><span className="text-[9px] uppercase">В долг</span></button>
+                  <button onClick={() => checkout('DEBT')} disabled={!selectedCustomerId} className="bg-red-500 text-white p-4 rounded-2xl font-black shadow-lg flex flex-col items-center active:scale-95 transition-transform disabled:opacity-40"><i className="fas fa-hand-holding-usd text-lg mb-1"></i><span className="text-[9px] uppercase">В долг</span></button>
                 </div>
               </div>
             )}
