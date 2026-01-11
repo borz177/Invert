@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Product, Sale, CashEntry, Customer, Supplier } from '../types';
+import { Product, Sale, CashEntry, Customer, Supplier, AppView } from '../types';
 
 interface DashboardProps {
   products: Product[];
@@ -8,7 +8,8 @@ interface DashboardProps {
   cashEntries: CashEntry[];
   customers: Customer[];
   suppliers: Supplier[];
-  onNavigate: (view: string) => void;
+  // Fix: changed from (view: string) => void to (view: AppView) => void to match App component's setView type
+  onNavigate: (view: AppView) => void;
   orderCount?: number;
 }
 
