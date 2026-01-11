@@ -27,7 +27,9 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Состояния для управления списком магазинов
+  // Ключ теперь глобальный для всего приложения на этом устройстве
+  const GLOBAL_SHOPS_KEY = 'inventory_pro_global_stores_v1';
+
   const [linkedShops, setLinkedShops] = useState<LinkedShop[]>([]);
   const [showAddShop, setShowAddShop] = useState(false);
   const [addShopLogin, setAddShopLogin] = useState('');
@@ -35,11 +37,12 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
   const [isAddingShop, setIsAddingShop] = useState(false);
 
   useEffect(() => {
-    if (user && (user.role as string) === 'client') {
-      const saved = localStorage.getItem(`linked_shops_${user.login}`);
-      if (saved) setLinkedShops(JSON.parse(saved));
+    // Загружаем список всех сохраненных магазинов на устройстве
+    const saved = localStorage.getItem(GLOBAL_SHOPS_KEY);
+    if (saved) {
+      setLinkedShops(JSON.parse(saved));
     }
-  }, [user]);
+  }, []);
 
   if (!user) return null;
 
@@ -73,10 +76,10 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
     e.preventDefault();
     setIsAddingShop(true);
     try {
-      // Пытаемся залогиниться, чтобы проверить данные и получить shopName
+      // Пытаемся залогиниться для проверки данных
       const testUser = await db.auth.login(addShopLogin, addShopPass);
 
-      // Имитируем запрос settings для получения названия магазина
+      // Имитируем запрос данных для получения названия
       const settings = await db.getData('settings');
       const shopName = settings?.shopName || 'Магазин';
 
@@ -87,34 +90,37 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
         ownerId: testUser.ownerId || testUser.id
       };
 
-      // Проверка на дубликаты в списке магазинов клиента
-      if (linkedShops.some(s => s.ownerId === newShop.ownerId)) {
-        alert('Этот магазин уже добавлен в ваш список');
+      // Проверка на дубликаты
+      if (linkedShops.some(s => s.login === newShop.login && s.ownerId === newShop.ownerId)) {
+        alert('Этот аккаунт уже есть в вашем списке');
         return;
       }
 
       const updatedShops = [...linkedShops, newShop];
       setLinkedShops(updatedShops);
-      localStorage.setItem(`linked_shops_${user.login}`, JSON.stringify(updatedShops));
+      localStorage.setItem(GLOBAL_SHOPS_KEY, JSON.stringify(updatedShops));
 
       setShowAddShop(false);
       setAddShopLogin('');
       setAddShopPass('');
-      alert('Магазин успешно добавлен!');
+      alert('Магазин успешно добавлен в список переключений!');
     } catch (err: any) {
-      alert('Ошибка: ' + err.message);
+      alert('Ошибка проверки данных: ' + err.message);
     } finally {
       setIsAddingShop(false);
     }
   };
 
-  const handleRemoveShop = (ownerId: string) => {
-    if (window.confirm('Удалить этот магазин из списка?')) {
-      const updated = linkedShops.filter(s => s.ownerId !== ownerId);
+  const handleRemoveShop = (login: string, ownerId: string) => {
+    if (window.confirm('Удалить этот магазин из списка быстрого доступа?')) {
+      const updated = linkedShops.filter(s => !(s.login === login && s.ownerId === ownerId));
       setLinkedShops(updated);
-      localStorage.setItem(`linked_shops_${user.login}`, JSON.stringify(updated));
+      localStorage.setItem(GLOBAL_SHOPS_KEY, JSON.stringify(updated));
     }
   };
+
+  // Фильтруем список, чтобы не показывать магазин, в котором мы сейчас находимся
+  const otherShops = linkedShops.filter(s => s.login !== user.login || s.ownerId !== (user as any).ownerId);
 
   return (
     <div className="space-y-6 pb-10">
@@ -180,24 +186,26 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
       {isClient && (
         <div className="space-y-4">
           <div className="flex justify-between items-center px-2">
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Мои магазины</h3>
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Переключение магазинов</h3>
             <button onClick={() => setShowAddShop(true)} className="text-[10px] font-black text-indigo-600 uppercase bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100">+ Добавить</button>
           </div>
 
           <div className="space-y-3">
+            {/* ТЕКУЩИЙ МАГАЗИН */}
             <div className="bg-indigo-600 p-5 rounded-3xl text-white shadow-lg border border-indigo-700 flex justify-between items-center group">
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-xl"><i className="fas fa-store"></i></div>
                 <div>
                   <p className="font-black text-sm">{currentShopName}</p>
-                  <p className="text-[8px] font-bold uppercase opacity-60">Текущий магазин</p>
+                  <p className="text-[8px] font-bold uppercase opacity-60">Вы сейчас здесь</p>
                 </div>
               </div>
-              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"><i className="fas fa-check"></i></div>
+              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center border border-white/20"><i className="fas fa-check text-[10px]"></i></div>
             </div>
 
-            {linkedShops.map(shop => (
-              <div key={shop.ownerId} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex justify-between items-center hover:border-indigo-200 transition-all group">
+            {/* ОСТАЛЬНЫЕ МАГАЗИНЫ */}
+            {otherShops.map(shop => (
+              <div key={`${shop.ownerId}-${shop.login}`} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex justify-between items-center hover:border-indigo-200 transition-all group">
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 bg-slate-50 text-indigo-500 rounded-xl flex items-center justify-center text-xl group-hover:bg-indigo-50 transition-colors"><i className="fas fa-store-alt"></i></div>
                   <div>
@@ -210,10 +218,10 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
                     onClick={() => onSwitchShop?.(shop)}
                     className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
                   >
-                    Перейти
+                    Зайти
                   </button>
                   <button
-                    onClick={() => handleRemoveShop(shop.ownerId)}
+                    onClick={() => handleRemoveShop(shop.login, shop.ownerId)}
                     className="w-9 h-9 text-red-200 hover:text-red-500 transition-colors"
                   >
                     <i className="fas fa-trash-alt text-xs"></i>
@@ -222,9 +230,9 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
               </div>
             ))}
 
-            {linkedShops.length === 0 && (
+            {otherShops.length === 0 && (
               <div className="p-8 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
-                <p className="text-xs text-slate-400 font-medium italic">У вас пока нет других магазинов. Добавьте их по логину и паролю.</p>
+                <p className="text-xs text-slate-400 font-medium italic">Список других магазинов пуст. Добавьте свои аккаунты для быстрого перехода.</p>
               </div>
             )}
           </div>
@@ -235,8 +243,8 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
           <div className="bg-white p-8 rounded-[40px] shadow-2xl w-full max-w-sm space-y-6 animate-slide-up">
             <div className="text-center">
-              <h3 className="text-xl font-black text-slate-800">Добавить магазин</h3>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Введите данные вашего аккаунта</p>
+              <h3 className="text-xl font-black text-slate-800">Добавить аккаунт</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Введите логин и пароль от другого магазина</p>
             </div>
             <form onSubmit={handleAddShop} className="space-y-4">
               <div className="space-y-1">
@@ -245,12 +253,12 @@ const Profile: React.FC<ProfileProps> = ({ user, sales, onLogout, onUpdateProfil
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Пароль</label>
-                <input required type="password" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="••••••••" value={addShopPass} onChange={e => setAddShopPass(e.target.value)} />
+                <input required type="password" placeholder="••••••••" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" value={addShopPass} onChange={e => setAddShopPass(e.target.value)} />
               </div>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowAddShop(false)} className="flex-1 py-4 font-bold text-slate-400">Отмена</button>
-                <button type="submit" disabled={isAddingShop} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-100 flex items-center justify-center">
-                  {isAddingShop ? <i className="fas fa-spinner fa-spin"></i> : 'ДОБАВИТЬ'}
+                <button type="submit" disabled={isAddingShop} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg flex items-center justify-center">
+                  {isAddingShop ? <i className="fas fa-spinner fa-spin"></i> : 'СОХРАНИТЬ'}
                 </button>
               </div>
             </form>
