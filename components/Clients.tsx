@@ -83,7 +83,7 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
   return (
     <div className="space-y-6 pb-20" onClick={() => setActiveMenuId(null)}>
       <div className="flex justify-between items-center px-1">
-        <h2 className="text-2xl font-bold text-slate-800">Клиенты</h2>
+        <h2 className="text-2xl font-black text-slate-800">Клиенты</h2>
         <button onClick={(e) => { e.stopPropagation(); setShowAdd(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold shadow-sm">+ Добавить</button>
       </div>
 
@@ -94,30 +94,39 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
 
       <div className="grid gap-3">
         {filtered.map(c => (
-          <div key={c.id} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex justify-between items-center relative transition-all hover:border-indigo-200">
+          <div key={c.id} className="bg-white p-5 rounded-[32px] shadow-sm border border-slate-100 flex justify-between items-center relative transition-all hover:border-indigo-200">
             <div className="flex items-center space-x-4">
-              <div className={`w-12 h-12 ${c.debt > 0 ? 'bg-red-50 text-red-500' : 'bg-emerald-50 text-emerald-600'} rounded-2xl flex items-center justify-center font-bold text-xl`}>
+              <div className={`w-14 h-14 ${Number(c.debt) > 0 ? 'bg-red-50 text-red-500' : 'bg-emerald-50 text-emerald-600'} rounded-[20px] flex items-center justify-center font-black text-xl shadow-inner`}>
                 {c.name[0]}
               </div>
               <div>
-                <h4 className="font-bold text-slate-800 leading-tight">{c.name}</h4>
-                <p className="text-xs text-slate-400">{c.phone || '---'}</p>
-                {c.email && <p className="text-[10px] text-indigo-400 font-bold">{c.email}</p>}
-                {c.debt > 0 && <p className="text-[10px] font-black text-red-500 uppercase mt-1">Долг: {c.debt.toLocaleString()} ₽</p>}
+                <h4 className="font-black text-slate-800 leading-tight">{c.name}</h4>
+                <p className="text-[10px] text-slate-400 font-bold uppercase">{c.phone || '---'}</p>
+                {c.email && <p className="text-[9px] text-indigo-400 font-black uppercase mt-0.5">{c.email}</p>}
+                {Number(c.debt) > 0 && (
+                  <div className="mt-1.5 bg-red-50 px-2 py-0.5 rounded-lg border border-red-100 inline-block">
+                    <p className="text-[10px] font-black text-red-600 uppercase">Долг: {Number(c.debt).toLocaleString()} ₽</p>
+                  </div>
+                )}
+                {Number(c.debt) <= 0 && <p className="text-[9px] font-black text-emerald-600 uppercase mt-1">Долгов нет</p>}
               </div>
             </div>
 
-            <button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === c.id ? null : c.id); }} className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-50 text-slate-400"><i className="fas fa-ellipsis-v text-sm"></i></button>
+            <div className="flex items-center gap-2">
+              {Number(c.debt) > 0 && <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>}
+              <button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === c.id ? null : c.id); }} className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-50 text-slate-400"><i className="fas fa-ellipsis-v text-sm"></i></button>
+            </div>
 
             {activeMenuId === c.id && (
               <div className="absolute top-12 right-0 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 w-48 z-20 animate-fade-in">
-                <button onClick={() => { setViewHistoryId(c.id); setActiveMenuId(null); }} className="w-full px-4 py-2.5 text-left text-sm font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"><i className="fas fa-history text-indigo-400 text-xs"></i> История</button>
-                <button onClick={() => openEdit(c)} className="w-full px-4 py-2.5 text-left text-sm font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"><i className="fas fa-pen text-indigo-400 text-xs"></i> Изменить</button>
-                <button onClick={() => setConfirmDeleteId(c.id)} className="w-full px-4 py-2.5 text-left text-sm font-bold text-red-500 hover:bg-red-50 flex items-center gap-2 border-t border-slate-50 mt-1"><i className="fas fa-trash text-xs"></i> Удалить</button>
+                <button onClick={() => { setViewHistoryId(c.id); setActiveMenuId(null); }} className="w-full px-4 py-3 text-left text-xs font-black text-slate-600 hover:bg-slate-50 flex items-center gap-3"><i className="fas fa-history text-indigo-400 text-[10px]"></i> История</button>
+                <button onClick={() => openEdit(c)} className="w-full px-4 py-3 text-left text-xs font-black text-slate-600 hover:bg-slate-50 flex items-center gap-3"><i className="fas fa-pen text-indigo-400 text-[10px]"></i> Изменить</button>
+                <button onClick={() => setConfirmDeleteId(c.id)} className="w-full px-4 py-3 text-left text-xs font-black text-red-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-50 mt-1"><i className="fas fa-trash text-[10px]"></i> Удалить</button>
               </div>
             )}
           </div>
         ))}
+        {filtered.length === 0 && <div className="py-20 text-center text-slate-300 italic">Клиенты не найдены</div>}
       </div>
 
       {showAdd && (
@@ -132,9 +141,9 @@ const Clients: React.FC<ClientsProps> = ({ customers, sales, cashEntries, onAdd,
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Скидка %" value={formData.discount || ''} onChange={e => setFormData({...formData, discount: parseInt(e.target.value) || 0})} />
-                <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Email (для связи с аккаунтом)" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
+                <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" placeholder="Email" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
               </div>
-              <p className="text-[9px] text-slate-400 italic text-center px-4">Если Email клиента совпадет с его личным аккаунтом, он увидит историю покупок у себя в приложении автоматически.</p>
+              <p className="text-[9px] text-slate-400 italic text-center px-4">Email помогает клиенту видеть историю своих покупок.</p>
             </div>
             <div className="flex gap-3">
               <button type="button" onClick={closeModal} className="flex-1 py-4 font-bold text-slate-400">Отмена</button>

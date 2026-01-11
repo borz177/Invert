@@ -176,6 +176,7 @@ const App: React.FC = () => {
 
   const handleConfirmOrder = (order: Order) => {
     let finalCustomerId = order.customerId;
+    let updatedCustomers = [...customers];
 
     // Авто-регистрация нового клиента если данные в note
     if (order.note && order.note.includes('[Имя:')) {
@@ -191,13 +192,21 @@ const App: React.FC = () => {
           id: `CUST-${Date.now()}`,
           name: name,
           phone: phone,
-          debt: 0
+          debt: order.total // Сразу прибавляем сумму заказа к долгу
         };
-        setCustomers([newCust, ...customers]);
+        updatedCustomers = [newCust, ...customers];
         finalCustomerId = newCust.id;
       } else {
         finalCustomerId = existing.id;
+        updatedCustomers = customers.map(c =>
+          c.id === existing.id ? { ...c, debt: (Number(c.debt) || 0) + order.total } : c
+        );
       }
+    } else {
+      // Если клиент уже привязан, просто обновляем его долг
+      updatedCustomers = customers.map(c =>
+        c.id === finalCustomerId ? { ...c, debt: (Number(c.debt) || 0) + order.total } : c
+      );
     }
 
     const newSale: Sale = {
@@ -223,6 +232,7 @@ const App: React.FC = () => {
     setSales([newSale, ...sales]);
     setProducts(updatedProducts);
     setOrders(updatedOrders);
+    setCustomers(updatedCustomers); // Обновляем список клиентов
     alert('Заказ выдан! Клиент привязан и сформирована продажа.');
   };
 

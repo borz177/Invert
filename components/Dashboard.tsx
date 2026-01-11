@@ -26,8 +26,10 @@ const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, cus
 
   const lowStock = products.filter(p => p.quantity <= p.minStock);
   const cashBalance = cashEntries.reduce((acc, e) => acc + (e.type === 'INCOME' ? e.amount : -e.amount), 0);
-  const totalDebtFromClients = customers.reduce((acc, c) => acc + (c.debt || 0), 0);
-  const totalDebtToSuppliers = suppliers.reduce((acc, s) => acc + (s.debt || 0), 0);
+
+  // Явный расчет долгов
+  const totalDebtFromClients = customers.reduce((acc, c) => acc + (Number(c.debt) || 0), 0);
+  const totalDebtToSuppliers = suppliers.reduce((acc, s) => acc + (Number(s.debt) || 0), 0);
 
   const soldProductsToday = todaySales.reduce((acc: any[], sale) => {
     sale.items.forEach(item => {
@@ -214,16 +216,16 @@ const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, cus
                     <p className="text-[10px] font-black text-red-400 uppercase tracking-widest">Итого нам должны</p>
                     <p className="text-3xl font-black text-red-500">{totalDebtFromClients.toLocaleString()} ₽</p>
                   </div>
-                  {customers.filter(c => (c.debt || 0) > 0).map(c => (
+                  {customers.filter(c => (Number(c.debt) || 0) > 0).map(c => (
                     <div key={c.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm">
                       <div>
                         <p className="font-bold text-slate-800 text-sm">{c.name}</p>
                         <p className="text-[10px] text-slate-400 font-bold uppercase">{c.phone || 'Без телефона'}</p>
                       </div>
-                      <p className="text-lg font-black text-red-500">{c.debt.toLocaleString()} ₽</p>
+                      <p className="text-lg font-black text-red-500">{Number(c.debt).toLocaleString()} ₽</p>
                     </div>
                   ))}
-                  {customers.filter(c => (c.debt || 0) > 0).length === 0 && <p className="text-center py-10 text-slate-300 italic text-sm">Должников нет!</p>}
+                  {customers.filter(c => (Number(c.debt) || 0) > 0).length === 0 && <p className="text-center py-10 text-slate-300 italic text-sm">Должников нет!</p>}
                 </div>
               )}
 
@@ -233,16 +235,16 @@ const Dashboard: React.FC<DashboardProps> = ({ products, sales, cashEntries, cus
                     <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Итого наш долг</p>
                     <p className="text-3xl font-black text-orange-500">{totalDebtToSuppliers.toLocaleString()} ₽</p>
                   </div>
-                  {suppliers.filter(s => (s.debt || 0) > 0).map(s => (
+                  {suppliers.filter(s => (Number(s.debt) || 0) > 0).map(s => (
                     <div key={s.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm">
                       <div>
                         <p className="font-bold text-slate-800 text-sm">{s.name}</p>
                         <p className="text-[10px] text-slate-400 font-bold uppercase">{s.phone || 'Без телефона'}</p>
                       </div>
-                      <p className="text-lg font-black text-orange-500">{s.debt.toLocaleString()} ₽</p>
+                      <p className="text-lg font-black text-orange-500">{Number(s.debt).toLocaleString()} ₽</p>
                     </div>
                   ))}
-                  {suppliers.filter(s => (s.debt || 0) > 0).length === 0 && <p className="text-center py-10 text-slate-300 italic text-sm">У нас нет долгов!</p>}
+                  {suppliers.filter(s => (Number(s.debt) || 0) > 0).length === 0 && <p className="text-center py-10 text-slate-300 italic text-sm">У нас нет долгов!</p>}
                 </div>
               )}
             </div>
