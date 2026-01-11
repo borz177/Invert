@@ -178,6 +178,58 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, posCart, warehouseBatch, orders]);
 
+  const handleConfirmOrder = (order: Order) => {
+    // 1. Создаем продажу
+    const newSale: Sale = {
+      id: `SALE-ORD-${order.id}`,
+      employeeId: currentUser?.id || 'admin',
+      items: order.items.map(it => {
+        const prod = products.find(p => p.id === it.productId);
+        return {
+          productId: it.productId,
+          quantity: it.quantity,
+          price: it.price,
+          cost: prod?.cost || 0
+        };
+      }),
+      total: order.total,
+      paymentMethod: 'CASH', // По умолчанию за нал
+      date: new Date().toISOString(),
+      customerId: order.customerId
+    };
+
+    // 2. Обновляем остатки товаров
+    const updatedProducts = products.map(p => {
+      const orderItem = order.items.find(it => it.productId === p.id);
+      if (orderItem) {
+        return { ...p, quantity: Math.max(0, p.quantity - orderItem.quantity) };
+      }
+      return p;
+    });
+
+    // 3. Добавляем запись в кассу (Приход)
+    const newCashEntry: CashEntry = {
+      id: `CASH-ORD-${order.id}`,
+      amount: order.total,
+      type: 'INCOME',
+      category: 'Продажа по заказу',
+      description: `Заказ №${order.id.slice(-4)}`,
+      date: new Date().toISOString(),
+      employeeId: currentUser?.id || 'admin',
+      customerId: order.customerId
+    };
+
+    // 4. Обновляем статус заказа
+    const updatedOrders = orders.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED' as const } : o);
+
+    setSales([newSale, ...sales]);
+    setProducts(updatedProducts);
+    setCashEntries([newCashEntry, ...cashEntries]);
+    setOrders(updatedOrders);
+
+    alert('Заказ успешно выдан и проведен как продажа!');
+  };
+
   const renderView = () => {
     if (!currentUser) return null;
 
@@ -206,7 +258,7 @@ const App: React.FC = () => {
       case 'SUPPLIERS': return <Suppliers suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products} onAdd={s => setSuppliers([...suppliers, s])} onUpdate={s => setSuppliers(suppliers.map(x => x.id === s.id ? s : x))} onDelete={id => setSuppliers(suppliers.filter(x => x.id !== id))}/>;
       case 'CLIENTS': return <Clients customers={customers} sales={sales} cashEntries={cashEntries} onAdd={c => setCustomers([...customers, c])} onUpdate={c => setCustomers(customers.map(x => x.id === c.id ? c : x))} onDelete={id => setCustomers(customers.filter(x => x.id !== id))}/>;
       case 'EMPLOYEES': return <Employees employees={employees} sales={sales} onAdd={e => setEmployees([...employees, e])} onUpdate={e => setEmployees(employees.map(x => x.id === e.id ? e : x))} onDelete={id => setEmployees(employees.filter(x => x.id !== id))}/>;
-      case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={()=>{}} onConfirmOrder={()=>{}}/>;
+      case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={(o)=>setOrders(orders.map(x=>x.id===o.id?o:x))} onConfirmOrder={handleConfirmOrder}/>;
       case 'SETTINGS': return <Settings settings={settings} onUpdate={setSettings} onClear={() => {}}/>;
       case 'PROFILE': return <Profile user={currentUser as any} sales={sales} onLogout={handleLogout} onUpdateProfile={handleLogin}/>;
       case 'MORE_MENU': return (

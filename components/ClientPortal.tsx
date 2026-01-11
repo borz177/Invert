@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, Product, Sale, Order, AppSettings, CashEntry } from '../types';
 import { db } from '../services/api';
 
@@ -34,9 +34,12 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const [isOrdering, setIsOrdering] = useState(false);
   const [note, setNote] = useState('');
 
-  // Для новых клиентов
   const [tempName, setTempName] = useState(user.name || '');
   const [tempPhone, setTempPhone] = useState('');
+
+  // Состояние для свайпа
+  const [swipeId, setSwipeId] = useState<string | null>(null);
+  const touchStart = useRef<number>(0);
 
   useEffect(() => {
     const fetchMyShops = async () => {
@@ -112,14 +115,36 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     setShopList(newList);
     await db.saveData('linkedShops', newList);
     if (activeShopId === id) setActiveShopId(null);
+    setSwipeId(null);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent, id: string) => {
+    touchStart.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent, id: string) => {
+    const currentX = e.targetTouches[0].clientX;
+    const diff = touchStart.current - currentX;
+    if (diff > 50) { // Свайп влево
+      setSwipeId(id);
+    } else if (diff < -50) { // Свайп вправо (отмена)
+      setSwipeId(null);
+    }
   };
 
   const myHistory = useMemo(() => {
     if (!shopData || !shopData.customerIdInShop) return [];
-    const s = shopData.sales.filter(x => x.customerId === shopData.customerIdInShop && !x.isDeleted);
-    const p = shopData.cashEntries.filter(x => x.customerId === shopData.customerIdInShop && x.type === 'INCOME');
-    return [...s.map(i => ({...i, type: 'SALE'})), ...p.map(i => ({...i, type: 'PAYMENT'}))]
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    // Фильтруем продажи и приходы кассы ИЗ ДАННЫХ МАГАЗИНА
+    const mySales = shopData.sales.filter(x => x.customerId === shopData.customerIdInShop && !x.isDeleted);
+    const myPayments = shopData.cashEntries.filter(x => x.customerId === shopData.customerIdInShop && x.type === 'INCOME');
+
+    const combined = [
+      ...mySales.map(i => ({...i, type: 'SALE'})),
+      ...myPayments.map(i => ({...i, type: 'PAYMENT'}))
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return combined;
   }, [shopData]);
 
   const myStats = useMemo(() => {
@@ -128,7 +153,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     const payments = shopData.cashEntries.filter(x => x.customerId === shopData.customerIdInShop && x.type === 'INCOME');
     const totalPurchased = sales.reduce((acc, i) => acc + i.total, 0);
     const totalPaid = payments.reduce((acc, i) => acc + i.amount, 0);
-    return { debt: totalPurchased - totalPaid, totalPurchased };
+    return { debt: Math.max(0, totalPurchased - totalPaid), totalPurchased };
   }, [shopData]);
 
   const cartTotal = useMemo(() => {
@@ -138,7 +163,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const handleSendOrder = () => {
     if (cart.length === 0 || !activeShopId) return;
 
-    // Валидация для новых клиентов
     if (!shopData?.customerIdInShop) {
       if (!tempName.trim() || !tempPhone.trim()) {
         alert('Пожалуйста, укажите ваше имя и номер телефона для оформления заказа');
@@ -153,7 +177,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
       total: cartTotal,
       status: 'NEW',
       date: new Date().toISOString(),
-      note: `${shopData?.customerIdInShop ? '' : `[${tempName}, ${tempPhone}] `}${note.trim()}` || undefined
+      note: `${shopData?.customerIdInShop ? '' : `[Имя: ${tempName}, Тел: ${tempPhone}] `}${note.trim()}` || undefined
     };
 
     db.saveDataOfShop(activeShopId, 'orders', [newOrder, ...(shopData?.orders || [])]);
@@ -305,7 +329,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
               )}
 
               <div className="space-y-3 mb-6">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Состав корзины</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Состав заказа</p>
                 <div className="space-y-2 max-h-[30vh] overflow-y-auto no-scrollbar pr-1">
                   {cart.map(item => (
                     <div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
@@ -373,25 +397,34 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
 
       <div className="space-y-4">
         <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-2">Ваши магазины</h3>
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-4 overflow-hidden">
           {shopList.map(shop => (
-            <div key={shop.id} className="relative group">
+            <div
+              key={shop.id}
+              className="relative overflow-hidden rounded-[40px] bg-red-500"
+              onTouchStart={(e) => handleTouchStart(e, shop.id)}
+              onTouchMove={(e) => handleTouchMove(e, shop.id)}
+            >
+              {/* Кнопка удаления (под карточкой) */}
               <button
-                onClick={() => setActiveShopId(shop.id)}
-                className="w-full bg-white p-7 rounded-[40px] shadow-sm border border-slate-50 flex items-center gap-6 hover:border-indigo-200 transition-all text-left group-active:scale-[0.98]"
+                onClick={() => removeShop(shop.id)}
+                className="absolute right-0 top-0 bottom-0 w-24 bg-red-500 text-white font-black uppercase text-[10px] flex items-center justify-center"
               >
-                <div className="w-16 h-16 bg-indigo-600 text-white rounded-[24px] flex items-center justify-center text-3xl shadow-lg shadow-indigo-100 transition-transform group-hover:scale-110"><i className="fas fa-store"></i></div>
+                Удалить
+              </button>
+
+              {/* Сама карточка магазина */}
+              <button
+                onClick={() => swipeId === shop.id ? setSwipeId(null) : setActiveShopId(shop.id)}
+                style={{ transform: swipeId === shop.id ? 'translateX(-96px)' : 'translateX(0)' }}
+                className="relative w-full bg-white p-7 shadow-sm border border-slate-50 flex items-center gap-6 transition-transform duration-300 ease-out text-left active:scale-[0.98]"
+              >
+                <div className="w-16 h-16 bg-indigo-600 text-white rounded-[24px] flex items-center justify-center text-3xl shadow-lg shadow-indigo-100"><i className="fas fa-store"></i></div>
                 <div className="flex-1">
                   <p className="text-lg font-black text-slate-800 leading-tight">{shop.shopName}</p>
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Нажать для перехода</p>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Свайп влево для удаления</p>
                 </div>
-                <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 group-hover:bg-indigo-50 group-hover:text-indigo-400 transition-colors"><i className="fas fa-chevron-right text-xs"></i></div>
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); removeShop(shop.id); }}
-                className="absolute -top-1 -right-1 w-9 h-9 bg-red-50 text-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all border border-red-100 shadow-sm active:scale-90"
-              >
-                <i className="fas fa-times text-xs"></i>
+                <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-slate-300"><i className="fas fa-chevron-right text-xs"></i></div>
               </button>
             </div>
           ))}
