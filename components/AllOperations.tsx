@@ -29,6 +29,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<any | null>(null);
+  const [printModalSale, setPrintModalSale] = useState<Sale | null>(null);
 
   const getEmployeeName = (id: string) => {
     if (!id) return '---';
@@ -84,7 +85,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
           <span>${sale.total.toLocaleString()} ₽</span>
         </div>
 
-        <div style="font-size: 10px; border-top: 1px solid #eee; pt: 10px;">
+        <div style="font-size: 10px; border-top: 1px solid #eee; padding-top: 10px;">
           <p style="margin: 2px 0;">Оплата: ${sale.paymentMethod === 'CASH' ? 'Наличные' : sale.paymentMethod === 'CARD' ? 'Карта' : 'В долг'}</p>
           <p style="margin: 2px 0;">Клиент: ${customer?.name || 'Розничный клиент'}</p>
           <p style="margin: 2px 0;">Продавец: ${getEmployeeName(sale.employeeId)}</p>
@@ -106,6 +107,85 @@ const AllOperations: React.FC<AllOperationsProps> = ({
 
     // @ts-ignore
     window.html2pdf().from(receiptHtml).set(opt).save();
+    setPrintModalSale(null);
+  };
+
+  const handlePrintInvoice = (sale: Sale) => {
+    const customer = customers.find(c => c.id === sale.customerId);
+    const shopName = settings?.shopName || "Магазин";
+    const dateStr = new Date(sale.date).toLocaleDateString();
+
+    const invoiceHtml = `
+      <div style="font-family: Arial, sans-serif; padding: 40px; color: #333; font-size: 12px; line-height: 1.6;">
+        <div style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px;">
+          <h1 style="margin: 0; font-size: 20px; font-weight: bold;">${shopName}</h1>
+          <p style="margin: 5px 0; font-size: 16px; letter-spacing: 2px;">РАСХОДНАЯ НАКЛАДНАЯ № ${sale.id.slice(-6)}</p>
+          <p style="margin: 0; font-size: 12px;">от ${dateStr}</p>
+        </div>
+
+        <div style="margin-bottom: 30px;">
+          <p style="margin: 5px 0;"><strong>Поставщик:</strong> ${shopName}</p>
+          <p style="margin: 5px 0;"><strong>Получатель:</strong> ${customer?.name || 'Розничный клиент'} ${customer?.phone ? `(${customer.phone})` : ''}</p>
+          <p style="margin: 5px 0;"><strong>Основание:</strong> Продажа №${sale.id.slice(-6)} (${sale.paymentMethod === 'CASH' ? 'Наличные' : sale.paymentMethod === 'CARD' ? 'Карта' : 'В долг'})</p>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+          <thead>
+            <tr style="background-color: #f2f2f2;">
+              <th style="border: 1px solid #ddd; padding: 10px; text-align: center; width: 40px;">№</th>
+              <th style="border: 1px solid #ddd; padding: 10px; text-align: left;">Товары (работы, услуги)</th>
+              <th style="border: 1px solid #ddd; padding: 10px; text-align: center; width: 60px;">Кол-во</th>
+              <th style="border: 1px solid #ddd; padding: 10px; text-align: center; width: 40px;">Ед.</th>
+              <th style="border: 1px solid #ddd; padding: 10px; text-align: right; width: 80px;">Цена</th>
+              <th style="border: 1px solid #ddd; padding: 10px; text-align: right; width: 90px;">Сумма</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sale.items.map((item, index) => {
+              const p = products.find(prod => prod.id === item.productId);
+              return `
+                <tr>
+                  <td style="border: 1px solid #ddd; padding: 10px; text-align: center;">${index + 1}</td>
+                  <td style="border: 1px solid #ddd; padding: 10px;">${p?.name || 'Товар'}</td>
+                  <td style="border: 1px solid #ddd; padding: 10px; text-align: center;">${item.quantity}</td>
+                  <td style="border: 1px solid #ddd; padding: 10px; text-align: center;">${p?.unit || 'шт'}</td>
+                  <td style="border: 1px solid #ddd; padding: 10px; text-align: right;">${item.price.toLocaleString()}</td>
+                  <td style="border: 1px solid #ddd; padding: 10px; text-align: right;">${(item.quantity * item.price).toLocaleString()}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="5" style="border: 1px solid #ddd; padding: 10px; text-align: right; font-weight: bold;">Итого:</td>
+              <td style="border: 1px solid #ddd; padding: 10px; text-align: right; font-weight: bold;">${sale.total.toLocaleString()} ₽</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div style="margin-top: 50px; display: flex; justify-content: space-between;">
+          <div style="width: 45%;">
+            <p style="margin-bottom: 20px;">Отпустил: ___________________ / ${getEmployeeName(sale.employeeId)}</p>
+            <p style="font-size: 10px; color: #666;">М.П. (при наличии)</p>
+          </div>
+          <div style="width: 45%;">
+            <p style="margin-bottom: 20px;">Получил: ___________________ / ${customer?.name || '________________'}</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const opt = {
+      margin: 0,
+      filename: `invoice-${sale.id.slice(-6)}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    // @ts-ignore
+    window.html2pdf().from(invoiceHtml).set(opt).save();
+    setPrintModalSale(null);
   };
 
   const operations = useMemo(() => {
@@ -151,7 +231,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
       });
     }
     return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [sales, transactions, cashEntries, products, employees, filter, customers]);
+  }, [sales, transactions, cashEntries, products, employees, filter, customers, ownerId, ownerName]);
 
   const handleEditSaleItem = (productId: string, field: 'quantity' | 'price', val: number) => {
     if (!editingSale) return;
@@ -222,7 +302,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
                   <div className="absolute top-10 right-0 bg-white rounded-2xl shadow-2xl border border-slate-100 py-2 w-48 z-[100] animate-fade-in">
                     <button onClick={(e) => { e.stopPropagation(); setSelectedDetail(op.raw); setActiveMenuId(null); }} className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3"><i className="fas fa-info-circle text-indigo-400"></i> Детали</button>
                     {op.type === 'SALE' && (
-                      <button onClick={(e) => { e.stopPropagation(); handlePrintReceipt(op.raw); setActiveMenuId(null); }} className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50"><i className="fas fa-print text-indigo-400"></i> Печать чека</button>
+                      <button onClick={(e) => { e.stopPropagation(); setPrintModalSale(op.raw); setActiveMenuId(null); }} className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50"><i className="fas fa-print text-indigo-400"></i> Печать...</button>
                     )}
                     {op.type === 'SALE' && canDelete && (
                       <button onClick={(e) => { e.stopPropagation(); setEditingSale(op.raw); setActiveMenuId(null); }} className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50"><i className="fas fa-pen text-indigo-400"></i> Редактировать</button>
@@ -238,6 +318,38 @@ const AllOperations: React.FC<AllOperationsProps> = ({
         ))}
         {operations.length === 0 && <div className="py-20 text-center text-slate-300 italic">Операций пока нет</div>}
       </div>
+
+      {printModalSale && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[600] flex items-center justify-center p-4" onClick={() => setPrintModalSale(null)}>
+          <div className="bg-white p-8 rounded-[40px] shadow-2xl w-full max-w-sm space-y-6 animate-slide-up" onClick={e => e.stopPropagation()}>
+            <div className="text-center">
+              <h3 className="text-xl font-black text-slate-800">Выберите тип документа</h3>
+              <p className="text-xs text-slate-400 mt-1 font-bold">Продажа №{printModalSale.id.slice(-6)}</p>
+            </div>
+            <div className="grid gap-3">
+              <button onClick={() => handlePrintReceipt(printModalSale)} className="w-full bg-white border-2 border-slate-100 p-5 rounded-3xl flex items-center gap-4 hover:bg-slate-50 transition-all group">
+                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                  <i className="fas fa-receipt text-xl"></i>
+                </div>
+                <div className="text-left">
+                  <p className="font-black text-slate-800">Кассовый чек</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">Формат 80мм</p>
+                </div>
+              </button>
+              <button onClick={() => handlePrintInvoice(printModalSale)} className="w-full bg-white border-2 border-slate-100 p-5 rounded-3xl flex items-center gap-4 hover:bg-slate-50 transition-all group">
+                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                  <i className="fas fa-file-invoice text-xl"></i>
+                </div>
+                <div className="text-left">
+                  <p className="font-black text-slate-800">Расходная накладная</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">Формат A4 (с подписями)</p>
+                </div>
+              </button>
+            </div>
+            <button onClick={() => setPrintModalSale(null)} className="w-full py-4 text-slate-400 font-bold uppercase text-[10px] tracking-widest">Закрыть</button>
+          </div>
+        </div>
+      )}
 
       {editingSale && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[500] flex items-center justify-center p-4" onClick={() => setEditingSale(null)}>
