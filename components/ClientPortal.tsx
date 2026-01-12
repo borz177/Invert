@@ -17,9 +17,10 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const [activeShopId, setActiveShopId] = useState<string | null>(null);
   const [shopList, setShopList] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [productSearch, setProductSearch] = useState(''); // Отдельный поиск для товаров
+  const [productSearch, setProductSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isShopLoading, setIsShopLoading] = useState(false);
 
   const [shopData, setShopData] = useState<{
     products: Product[];
@@ -49,7 +50,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     fetchMyShops();
   }, []);
 
-  // Поиск магазинов (только если не выбран магазин)
   useEffect(() => {
     if (activeShopId) return;
     const search = async () => {
@@ -77,33 +77,43 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
       if (onActiveShopChange) onActiveShopChange(null);
       return;
     }
+
     const fetchShopInfo = async () => {
-      const [p, s, o, c, sett, customers] = await Promise.all([
-        db.getDataOfShop(activeShopId, 'products'),
-        db.getDataOfShop(activeShopId, 'sales'),
-        db.getDataOfShop(activeShopId, 'orders'),
-        db.getDataOfShop(activeShopId, 'cashEntries'),
-        db.getDataOfShop(activeShopId, 'settings'),
-        db.getDataOfShop(activeShopId, 'customers')
-      ]);
+      setIsShopLoading(true);
+      try {
+        const [p, s, o, c, sett, customers] = await Promise.all([
+          db.getDataOfShop(activeShopId, 'products'),
+          db.getDataOfShop(activeShopId, 'sales'),
+          db.getDataOfShop(activeShopId, 'orders'),
+          db.getDataOfShop(activeShopId, 'cashEntries'),
+          db.getDataOfShop(activeShopId, 'settings'),
+          db.getDataOfShop(activeShopId, 'customers')
+        ]);
 
-      const meInShop = customers?.find((c: any) =>
-        (c.email?.toLowerCase().trim() === user.email?.toLowerCase().trim() && user.email) ||
-        (c.name?.toLowerCase().trim() === user.name?.toLowerCase().trim())
-      );
+        const meInShop = customers?.find((cust: any) =>
+          (cust.email?.toLowerCase().trim() === user.email?.toLowerCase().trim() && user.email) ||
+          (cust.name?.toLowerCase().trim() === user.name?.toLowerCase().trim()) ||
+          (cust.phone && tempPhone && cust.phone.replace(/\D/g,'') === tempPhone.replace(/\D/g,''))
+        );
 
-      setShopData({
-        products: p || [],
-        sales: s || [],
-        orders: o || [],
-        cashEntries: c || [],
-        settings: sett || {},
-        customerIdInShop: meInShop?.id
-      });
-      if (onActiveShopChange) onActiveShopChange(sett?.shopName || 'Магазин');
+        setShopData({
+          products: p || [],
+          sales: s || [],
+          orders: o || [],
+          cashEntries: c || [],
+          settings: sett || {},
+          customerIdInShop: meInShop?.id
+        });
+
+        if (onActiveShopChange) onActiveShopChange(sett?.shopName || 'Магазин');
+      } catch (err) {
+        console.error("Failed to load shop data", err);
+      } finally {
+        setIsShopLoading(false);
+      }
     };
     fetchShopInfo();
-  }, [activeShopId, user.email, user.name]);
+  }, [activeShopId]);
 
   const addShop = async (shop: any) => {
     if (shopList.some(s => s.id === shop.id)) return;
@@ -137,14 +147,17 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const myHistory = useMemo(() => {
     if (!shopData) return [];
 
+    // Ищем продажи по ID клиента в магазине ИЛИ по глобальному ID пользователя
     const mySales = shopData.sales.filter(x =>
       !x.isDeleted &&
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
     );
+
     const myPayments = shopData.cashEntries.filter(x =>
       x.type === 'INCOME' &&
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
     );
+
     const myOrders = shopData.orders.filter(x =>
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id) &&
       (x.status === 'NEW' || x.status === 'ACCEPTED' || x.status === 'CANCELLED')
@@ -159,9 +172,10 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
 
   const filteredProducts = useMemo(() => {
     if (!shopData) return [];
+    const search = productSearch.toLowerCase();
     return shopData.products.filter(p =>
-      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      (p.category && p.category.toLowerCase().includes(productSearch.toLowerCase()))
+      p.name.toLowerCase().includes(search) ||
+      (p.category && p.category.toLowerCase().includes(search))
     );
   }, [shopData, productSearch]);
 
@@ -198,6 +212,15 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   };
 
   if (activeShopId && shopData) {
+    if (isShopLoading) {
+       return (
+         <div className="flex flex-col items-center justify-center py-20 animate-pulse">
+           <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+           <p className="text-xs font-black text-indigo-400 uppercase tracking-widest">Загрузка магазина...</p>
+         </div>
+       );
+    }
+
     return (
       <div className="space-y-6 animate-fade-in pb-32">
         <div className="flex bg-white p-2 rounded-[32px] shadow-sm border border-slate-50">
