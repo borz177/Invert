@@ -127,62 +127,72 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, orders]);
 
-  const handleAddCashEntry = (entry: CashEntry) => {
-    setCashEntries([entry, ...cashEntries]);
-    // ВАЖНО: Уменьшаем долг клиента только если это явная "Оплата от клиента" (пополнение баланса),
-    // а не автоматическая проводка наличной продажи (Категория: 'Продажа').
-    // Наличная продажа не должна уменьшать СТАРЫЙ долг, она просто закрывает ТЕКУЩУЮ покупку.
-    if (entry.type === 'INCOME' && entry.customerId && entry.category !== 'Продажа') {
-      setCustomers(prev => prev.map(c => c.id === entry.customerId ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - entry.amount) } : c));
-    }
-    if (entry.type === 'EXPENSE' && entry.supplierId) {
-      setSuppliers(prev => prev.map(s => s.id === entry.supplierId ? { ...s, debt: Math.max(0, (Number(s.debt) || 0) - entry.amount) } : s));
-    }
-  };
+ const handleAddCashEntry = (entry: CashEntry) => {
+  setCashEntries([entry, ...cashEntries]);
 
-  const handleConfirmOrder = (order: Order) => {
-    let finalCustomerId = order.customerId;
-    let updatedCustomers = [...customers];
+  // Уменьшаем долг клиента ТОЛЬКО если это НЕ автоматическая запись от продажи
+  // (т.е. только при явной оплате долга, например, категория "Оплата")
+  if (entry.type === 'INCOME' && entry.customerId && entry.category !== 'Продажа') {
+    setCustomers(prev => prev.map(c =>
+      c.id === entry.customerId
+        ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - entry.amount) }
+        : c
+    ));
+  }
 
-    if (order.note && order.note.includes('[Имя:')) {
-      const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
-      const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
-      const name = matchName ? matchName[1].trim() : 'Новый клиент';
-      const phone = matchPhone ? matchPhone[1].trim() : '';
+  // Для поставщиков — аналогично (если нужно)
+  if (entry.type === 'EXPENSE' && entry.supplierId) {
+    setSuppliers(prev => prev.map(s =>
+      s.id === entry.supplierId
+        ? { ...s, debt: Math.max(0, (Number(s.debt) || 0) - entry.amount) }
+        : s
+    ));
+  }
+};
 
-      const existing = customers.find(c => (phone && c.phone === phone) || (c.id === order.customerId));
-      if (!existing) {
-        const newCust: Customer = { id: `CUST-${Date.now()}`, name, phone, debt: order.total, discount: 0 };
-        updatedCustomers = [newCust, ...customers];
-        finalCustomerId = newCust.id;
-      } else {
-        finalCustomerId = existing.id;
-        updatedCustomers = customers.map(c => c.id === existing.id ? { ...c, debt: (Number(c.debt) || 0) + order.total } : c);
-      }
+const handleConfirmOrder = (order: Order) => {
+  let finalCustomerId = order.customerId;
+  let updatedCustomers = [...customers];
+
+  if (order.note && order.note.includes('[Имя:')) {
+    const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
+    const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
+    const name = matchName ? matchName[1].trim() : 'Новый клиент';
+    const phone = matchPhone ? matchPhone[1].trim() : '';
+
+    const existing = customers.find(c => (phone && c.phone === phone) || (c.id === order.customerId));
+    if (!existing) {
+      const newCust: Customer = { id: `CUST-${Date.now()}`, name, phone, debt: order.total, discount: 0 };
+      updatedCustomers = [newCust, ...customers];
+      finalCustomerId = newCust.id;
     } else {
-      updatedCustomers = customers.map(c => c.id === finalCustomerId ? { ...c, debt: (Number(c.debt) || 0) + order.total } : c);
+      finalCustomerId = existing.id;
+      updatedCustomers = customers.map(c => c.id === existing.id ? { ...c, debt: (Number(c.debt) || 0) + order.total } : c);
     }
+  } else {
+    updatedCustomers = customers.map(c => c.id === finalCustomerId ? { ...c, debt: (Number(c.debt) || 0) + order.total } : c);
+  }
 
-    const newSale: Sale = {
-      id: `SALE-ORD-${order.id}`,
-      employeeId: currentUser?.id || 'admin',
-      items: order.items.map(it => ({ ...it, cost: products.find(p => p.id === it.productId)?.cost || 0 })),
-      total: order.total,
-      paymentMethod: 'DEBT',
-      date: new Date().toISOString(),
-      customerId: finalCustomerId
-    };
-
-    setProducts(products.map(p => {
-      const it = order.items.find(x => x.productId === p.id);
-      return (it && p.type !== 'SERVICE') ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) } : p;
-    }));
-
-    setSales([newSale, ...sales]);
-    setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o));
-    setCustomers(updatedCustomers);
-    alert('Заказ выдан! Сформирована продажа и обновлен долг клиента.');
+  const newSale: Sale = {
+    id: `SALE-ORD-${order.id}`,
+    employeeId: currentUser?.id || 'admin',
+    items: order.items.map(it => ({ ...it, cost: products.find(p => p.id === it.productId)?.cost || 0 })),
+    total: order.total,
+    paymentMethod: 'DEBT',
+    date: new Date().toISOString(),
+    customerId: finalCustomerId
   };
+
+  setProducts(products.map(p => {
+    const it = order.items.find(x => x.productId === p.id);
+    return (it && p.type !== 'SERVICE') ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) } : p;
+  }));
+
+  setSales([newSale, ...sales]);
+  setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o));
+  setCustomers(updatedCustomers);
+  alert('Заказ выдан! Сформирована продажа и обновлен долг клиента.');
+};
 
   const handleClearData = async () => {
     if (!window.confirm('Очистить все данные?')) return;
@@ -201,7 +211,7 @@ const App: React.FC = () => {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={setView} orderCount={orders.filter(o => o.status === 'NEW').length}/>;
       case 'PRODUCTS': return <ProductList products={products} categories={categories} canEdit={true} canCreate={true} canDelete={true} showCost={true} onAdd={p => setProducts([p, ...products])} onAddBulk={ps => setProducts([...ps, ...products])} onUpdate={p => setProducts(products.map(x => x.id === p.id ? p : x))} onDelete={id => setProducts(products.filter(x => x.id !== id))} onAddCategory={c => setCategories([...categories, c])} onRenameCategory={(o, n) => { setCategories(categories.map(c => c === o ? n : c)); setProducts(products.map(p => p.category === o ? { ...p, category: n } : p)); }} onDeleteCategory={c => { setCategories(categories.filter(x => x !== c)); setProducts(products.map(p => p.category === c ? { ...p, category: 'Другое' } : p)); }}/>;
       case 'WAREHOUSE': return <Warehouse products={products} suppliers={suppliers} transactions={transactions} batch={warehouseBatch} setBatch={setWarehouseBatch} onTransaction={t => setTransactions([t, ...transactions])} onTransactionsBulk={ts => setTransactions([...ts, ...transactions])} onAddCashEntry={handleAddCashEntry}/>;
-      case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} currentUserId={currentUser.id} onSale={s => { setSales([s, ...sales]); if (s.paymentMethod === 'DEBT' && s.customerId) setCustomers(prev => prev.map(c => c.id === s.customerId ? { ...c, debt: (Number(c.debt) || 0) + s.total } : c)); else if (s.paymentMethod !== 'DEBT') handleAddCashEntry({ id: `S-${Date.now()}`, amount: s.total, type: 'INCOME', category: 'Продажа', description: `Продажа №${s.id.slice(-4)}`, date: s.date, employeeId: s.employeeId, customerId: s.customerId }); }}/>;
+      case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} currentUserId={currentUser.id} onSale={s => { setSales([s, ...sales]); if (s.paymentMethod === 'DEBT' && s.customerId) setCustomers(prev => prev.map(c => c.id === s.customerId ? { ...c, debt: (Number(c.debt) || 0) + s.total } : c)); else if (s.paymentMethod !== 'DEBT') handleAddCashEntry({ id: `S-${Date.now()}`, amount: s.total, type: 'INCOME', category: 'Продажа', description: `Продажа №${s.id.slice(-4)}`, date: s.date, employeeId: s.employeeId }); }}/>;
       case 'CLIENTS': return <Clients customers={customers} sales={sales} cashEntries={cashEntries} onAdd={c => setCustomers([...customers, c])} onUpdate={c => setCustomers(customers.map(x => x.id === c.id ? c : x))} onDelete={id => setCustomers(customers.filter(x => x.id !== id))}/>;
       case 'SUPPLIERS': return <Suppliers suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products} onAdd={s => setSuppliers([...suppliers, s])} onUpdate={s => setSuppliers(suppliers.map(x => x.id === s.id ? s : x))} onDelete={id => setSuppliers(suppliers.filter(x => x.id !== id))}/>;
       case 'EMPLOYEES': return <Employees employees={employees} sales={sales} onAdd={e => setEmployees([...employees, e])} onUpdate={e => setEmployees(employees.map(x => x.id === e.id ? e : x))} onDelete={id => setEmployees(employees.filter(x => x.id !== id))}/>;
