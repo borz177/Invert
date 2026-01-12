@@ -51,7 +51,7 @@ export interface Order {
     price: number;
   }>;
   total: number;
-  status: 'NEW' | 'CONFIRMED' | 'CANCELLED';
+  status: 'NEW' | 'ACCEPTED' | 'CONFIRMED' | 'CANCELLED';
   date: string;
   note?: string;
 }

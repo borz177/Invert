@@ -31,12 +31,16 @@ const Warehouse: React.FC<WarehouseProps> = ({ products, suppliers, transactions
   }, [suppliers, selectedSupplier]);
 
   const categories = useMemo(() => {
-    return Array.from(new Set(products.map(p => p.category))).sort();
+    // Показываем категории только для физических товаров
+    return Array.from(new Set(products.filter(p => p.type !== 'SERVICE').map(p => p.category))).sort();
   }, [products]);
 
   const filteredProducts = useMemo(() => {
     if (!selectedCategory) return [];
-    return products.filter(p => p.category === selectedCategory).sort((a, b) => a.name.localeCompare(b.name));
+    // Скрываем услуги из складского прихода
+    return products
+      .filter(p => p.category === selectedCategory && p.type !== 'SERVICE')
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [selectedCategory, products]);
 
   const addToBatch = () => {

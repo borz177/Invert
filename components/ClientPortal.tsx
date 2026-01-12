@@ -134,20 +134,17 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const myHistory = useMemo(() => {
     if (!shopData) return [];
 
-    // 1. Покупки (Sale)
     const mySales = shopData.sales.filter(x =>
       !x.isDeleted &&
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
     );
-    // 2. Платежи (CashEntry)
     const myPayments = shopData.cashEntries.filter(x =>
       x.type === 'INCOME' &&
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
     );
-    // 3. Активные или отмененные заказы (Order)
     const myOrders = shopData.orders.filter(x =>
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id) &&
-      (x.status === 'NEW' || x.status === 'CANCELLED')
+      (x.status === 'NEW' || x.status === 'ACCEPTED' || x.status === 'CANCELLED')
     );
 
     return [
@@ -186,15 +183,15 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     db.saveDataOfShop(activeShopId, 'orders', [newOrder, ...(shopData?.orders || [])]);
     setCart([]);
     setIsOrdering(false);
-    alert('Заявка отправлена и обрабатывается!');
+    alert('Заявка отправлена!');
   };
 
   if (activeShopId && shopData) {
     return (
       <div className="space-y-6 animate-fade-in pb-32">
         <div className="flex bg-white p-2 rounded-[32px] shadow-sm border border-slate-50">
-          <button onClick={() => setTab('PRODUCTS')} className={`flex-1 py-4 rounded-[28px] text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'PRODUCTS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400'}`}>Заказать товар</button>
-          <button onClick={() => setTab('HISTORY')} className={`flex-1 py-4 rounded-[28px] text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'HISTORY' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400'}`}>Моя история</button>
+          <button onClick={() => setTab('PRODUCTS')} className={`flex-1 py-4 rounded-[28px] text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'PRODUCTS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400'}`}>Заказать</button>
+          <button onClick={() => setTab('HISTORY')} className={`flex-1 py-4 rounded-[28px] text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'HISTORY' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400'}`}>История</button>
         </div>
 
         {tab === 'PRODUCTS' ? (
@@ -206,7 +203,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
             {shopData.settings.showProductsToClients ? (
               <div className="grid grid-cols-2 gap-4">
                 {shopData.products.map(p => (
-                  <div key={p.id} className="bg-white p-5 rounded-[40px] shadow-sm border border-slate-50 flex flex-col relative transition-all">
+                  <div key={p.id} className="bg-white p-5 rounded-[40px] shadow-sm border border-slate-50 flex flex-col relative">
                     <span className="absolute top-4 left-5 text-[8px] font-black text-indigo-400 uppercase bg-indigo-50 px-2 py-1 rounded-full">{p.category}</span>
                     <div className="aspect-square bg-slate-50 rounded-[32px] mb-4 overflow-hidden flex items-center justify-center p-2">
                       {p.image ? <img src={p.image} className="w-full h-full object-contain" /> : <i className="fas fa-image text-4xl text-slate-100"></i>}
@@ -239,20 +236,20 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
           <div className="space-y-6 animate-fade-in">
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-red-50 p-6 rounded-[32px] border border-red-100 text-center"><p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Долг</p><p className="text-2xl font-black text-red-600">{myStats.debt.toLocaleString()} ₽</p></div>
-              <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 text-center"><p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Всего покупок</p><p className="text-2xl font-black text-indigo-600">{myStats.totalPurchased.toLocaleString()} ₽</p></div>
+              <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 text-center"><p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Закупок на сумму</p><p className="text-2xl font-black text-indigo-600">{myStats.totalPurchased.toLocaleString()} ₽</p></div>
             </div>
             <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-50">
-              <p className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50">История операций</p>
+              <p className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50">Ваши операции</p>
               {myHistory.map((op: any) => (
                 <div key={op.id} onClick={() => setSelectedOpDetail(op)} className="p-5 flex justify-between items-center active:bg-slate-50 cursor-pointer">
-                  <div>
+                  <div className="min-w-0 flex-1 pr-4">
                     <p className="font-bold text-slate-800 text-sm">
                       {op.type === 'SALE' ? `Покупка №${op.id.slice(-4)}` : op.type === 'PAYMENT' ? 'Платеж' : 'Заявка'}
                     </p>
                     <p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p>
                     {op.type === 'ORDER' && (
-                      <span className={`text-[8px] font-black uppercase ${op.status === 'NEW' ? 'text-indigo-500' : 'text-red-400'}`}>
-                        {op.status === 'NEW' ? 'Обрабатывается' : 'Отменена'}
+                      <span className={`text-[8px] font-black uppercase inline-block px-1.5 py-0.5 rounded mt-1 ${op.status === 'NEW' ? 'bg-indigo-50 text-indigo-500' : op.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-400'}`}>
+                        {op.status === 'NEW' ? 'В обработке' : op.status === 'ACCEPTED' ? 'Принята' : 'Отменена'}
                       </span>
                     )}
                   </div>
@@ -264,7 +261,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
                   </div>
                 </div>
               ))}
-              {myHistory.length === 0 && <p className="text-center py-20 text-slate-300 italic">История пуста</p>}
+              {myHistory.length === 0 && <p className="text-center py-20 text-slate-300 italic">Событий нет</p>}
             </div>
           </div>
         )}
@@ -291,7 +288,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
                            <div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
                              <div>
                                <p className="font-bold text-slate-800 text-sm">{p?.name || 'Товар'}</p>
-                               <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {p?.unit || 'шт'} x {item.price.toLocaleString()} ₽</p>
+                               <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {p?.unit || 'шт'} x {item.price} ₽</p>
                              </div>
                              <p className="font-black text-slate-800">{(item.quantity * item.price).toLocaleString()} ₽</p>
                            </div>
@@ -320,7 +317,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
               <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-black text-slate-800">Оформление</h3><p className="text-xs text-slate-400 font-bold">Заявка на покупку</p></div><button onClick={() => setIsOrdering(false)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full"><i className="fas fa-times"></i></button></div>
               {!shopData?.customerIdInShop && (
                 <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 mb-6 space-y-4">
-                  <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center">Контакты для связи</p>
+                  <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center">Ваши данные для связи</p>
                   <input className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold" placeholder="Имя" value={tempName} onChange={e => setTempName(e.target.value)} />
                   <input className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold" placeholder="Телефон" type="tel" value={tempPhone} onChange={e => setTempPhone(e.target.value)} />
                 </div>
@@ -333,9 +330,9 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
                   </div>
                 ))}
               </div>
-              <textarea placeholder="Примечание к заказу..." className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[24px] text-sm outline-none mb-6 resize-none" rows={2} value={note} onChange={e=>setNote(e.target.value)} />
+              <textarea placeholder="Сообщение продавцу..." className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[24px] text-sm outline-none mb-6 resize-none" rows={2} value={note} onChange={e=>setNote(e.target.value)} />
               <div className="flex justify-between items-center mb-6 px-2"><span className="text-[10px] font-black text-slate-400 uppercase">Сумма</span><span className="text-2xl font-black text-slate-800">{cartTotal.toLocaleString()} ₽</span></div>
-              <button onClick={handleSendOrder} className="w-full bg-indigo-600 text-white p-6 rounded-[28px] font-black uppercase shadow-xl tracking-widest">Оформить заявку</button>
+              <button onClick={handleSendOrder} className="w-full bg-indigo-600 text-white p-6 rounded-[28px] font-black uppercase shadow-xl tracking-widest">Отправить заказ</button>
             </div>
           </div>
         )}

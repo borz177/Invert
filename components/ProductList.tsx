@@ -304,44 +304,71 @@ const ProductList: React.FC<ProductListProps> = ({
 
             <div className="space-y-4">
               <div className="flex bg-slate-100 p-1 rounded-2xl">
-                <button type="button" onClick={() => setFormData({...formData, type: 'PRODUCT'})} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${formData.type === 'PRODUCT' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>Товар</button>
-                <button type="button" onClick={() => setFormData({...formData, type: 'SERVICE'})} className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${formData.type === 'SERVICE' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}>Услуга</button>
+                <button type="button" onClick={() => setFormData({...formData, type: 'PRODUCT'})}
+                        className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${formData.type === 'PRODUCT' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>Товар
+                </button>
+                <button type="button" onClick={() => setFormData({...formData, type: 'SERVICE'})}
+                        className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${formData.type === 'SERVICE' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}>Услуга
+                </button>
               </div>
 
               <div className="flex flex-col items-center gap-3">
                 <label className="relative cursor-pointer group">
-                  <div className="w-32 h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[32px] flex flex-col items-center justify-center overflow-hidden transition-all group-hover:border-indigo-300">
+                  <div
+                      className="w-32 h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[32px] flex flex-col items-center justify-center overflow-hidden transition-all group-hover:border-indigo-300">
                     {formData.image ? (
-                      <img src={formData.image} className="w-full h-full object-cover" alt="Preview" />
+                        <img src={formData.image} className="w-full h-full object-cover" alt="Preview"/>
                     ) : (
-                      <>
-                        <i className={`fas ${formData.type === 'SERVICE' ? 'fa-concierge-bell' : 'fa-camera'} text-2xl text-slate-300 mb-2`}></i>
-                        <span className="text-[8px] font-black text-slate-400 uppercase">Загрузить фото</span>
-                      </>
+                        <>
+                          <i className={`fas ${formData.type === 'SERVICE' ? 'fa-concierge-bell' : 'fa-camera'} text-2xl text-slate-300 mb-2`}></i>
+                          <span className="text-[8px] font-black text-slate-400 uppercase">Загрузить фото</span>
+                        </>
                     )}
                   </div>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                  <input type="file" accept="image/*" className="hidden" onChange={handleImageChange}/>
                   {formData.image && (
-                    <button type="button" onClick={(e) => { e.preventDefault(); setFormData({ ...formData, image: undefined }); }} className="absolute -top-2 -right-2 w-8 h-8 bg-white text-red-500 rounded-full shadow-lg flex items-center justify-center border border-slate-100"><i className="fas fa-times"></i></button>
+                      <button type="button" onClick={(e) => {
+                        e.preventDefault();
+                        setFormData({...formData, image: undefined});
+                      }}
+                              className="absolute -top-2 -right-2 w-8 h-8 bg-white text-red-500 rounded-full shadow-lg flex items-center justify-center border border-slate-100">
+                        <i className="fas fa-times"></i></button>
                   )}
                 </label>
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Название {formData.type === 'SERVICE' ? 'услуги' : 'товара'}</label>
-                <input required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-medium" placeholder={formData.type === 'SERVICE' ? "Напр: Маникюр" : "Напр: Футболка"} value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
+                <label
+                    className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Название {formData.type === 'SERVICE' ? 'услуги' : 'товара'}</label>
+                <input required
+                       className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-medium"
+                       placeholder={formData.type === 'SERVICE' ? "Напр: Маникюр" : "Напр: Футболка"}
+                       value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})}/>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Описание
+                  (необязательно)</label>
+                <textarea
+                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-medium text-slate-700 h-24 resize-none"
+                    placeholder="Добавьте детали, характеристики или состав..." value={formData.description || ''}
+                    onChange={e => setFormData({...formData, description: e.target.value})}/>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Папка</label>
-                  <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+                  <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none"
+                          value={formData.category}
+                          onChange={e => setFormData({...formData, category: e.target.value})}>
                     {categories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ед. изм.</label>
-                  <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value as any})}>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ед.
+                    изм.</label>
+                  <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
+                          value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value as any})}>
                     <option value="шт">шт</option>
                     <option value="кг">кг</option>
                     <option value="упак">упак</option>
@@ -354,40 +381,55 @@ const ProductList: React.FC<ProductListProps> = ({
 
               <div className="grid grid-cols-2 gap-4">
                 {formData.type !== 'SERVICE' && (
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Закуп (₽)</label>
-                    <input type="number" step="0.01" inputMode="decimal" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.cost === 0 ? '' : formData.cost} onChange={e => setFormData({...formData, cost: parseFloat(e.target.value) || 0})} />
-                  </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Закуп
+                        (₽)</label>
+                      <input type="number" step="0.01" inputMode="decimal"
+                             className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
+                             value={formData.cost === 0 ? '' : formData.cost}
+                             onChange={e => setFormData({...formData, cost: parseFloat(e.target.value) || 0})}/>
+                    </div>
                 )}
                 <div className={`${formData.type === 'SERVICE' ? 'col-span-2' : ''} space-y-1`}>
-                  <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Цена продажи (₽)</label>
-                  <input type="number" step="0.01" inputMode="decimal" required className="w-full p-4 bg-indigo-50 border border-indigo-100 rounded-2xl outline-none font-black text-indigo-600" value={formData.price === 0 ? '' : formData.price} onChange={e => setFormData({...formData, price: parseFloat(e.target.value) || 0})} />
+                  <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Цена продажи
+                    (₽)</label>
+                  <input type="number" step="0.01" inputMode="decimal" required
+                         className="w-full p-4 bg-indigo-50 border border-indigo-100 rounded-2xl outline-none font-black text-indigo-600"
+                         value={formData.price === 0 ? '' : formData.price}
+                         onChange={e => setFormData({...formData, price: parseFloat(e.target.value) || 0})}/>
                 </div>
               </div>
 
               {formData.type !== 'SERVICE' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Остаток</label>
-                    <input
-                      type="number"
-                      step="any"
-                      inputMode="decimal"
-                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
-                      value={formData.quantity === 0 || formData.quantity === null || formData.quantity === undefined ? '' : formData.quantity}
-                      onChange={e => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label
+                          className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Остаток</label>
+                      <input
+                          type="number"
+                          step="any"
+                          inputMode="decimal"
+                          className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
+                          value={formData.quantity === 0 || formData.quantity === null || formData.quantity === undefined ? '' : formData.quantity}
+                          onChange={e => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Мин.
+                        порог</label>
+                      <input type="number" inputMode="numeric"
+                             className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
+                             value={formData.minStock === 0 ? '' : formData.minStock}
+                             onChange={e => setFormData({...formData, minStock: parseFloat(e.target.value) || 0})}/>
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Мин. порог</label>
-                    <input type="number" inputMode="numeric" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={formData.minStock === 0 ? '' : formData.minStock} onChange={e => setFormData({...formData, minStock: parseFloat(e.target.value) || 0})} />
-                  </div>
-                </div>
               )}
             </div>
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={closeForm} className="flex-1 py-4 font-bold text-slate-400">Отмена</button>
-              <button type="submit" className="flex-1 bg-indigo-600 text-white p-4 rounded-3xl font-black shadow-lg uppercase tracking-widest text-xs">СОХРАНИТЬ</button>
+              <button type="submit"
+                      className="flex-1 bg-indigo-600 text-white p-4 rounded-3xl font-black shadow-lg uppercase tracking-widest text-xs">СОХРАНИТЬ
+              </button>
             </div>
           </form>
         </div>
@@ -395,7 +437,7 @@ const ProductList: React.FC<ProductListProps> = ({
 
       {/* Bulk and Delete modals remain same */}
       {showBulk && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[140] flex items-center justify-center p-4" onClick={closeForm}>
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[140] flex items-center justify-center p-4" onClick={closeForm}>
           <form onSubmit={handleBulkSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-w-md space-y-5 animate-fade-in" onClick={e => e.stopPropagation()}>
             <h3 className="text-2xl font-black text-slate-800">Массовый ввод (товары)</h3>
             <p className="text-xs text-slate-400">Формат: Название, Цена, Закуп, Ост</p>
