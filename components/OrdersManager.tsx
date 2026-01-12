@@ -50,6 +50,16 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
     else alert('Номер телефона не указан');
   };
 
+  const getStatusText = (status: string) => {
+    switch(status) {
+      case 'NEW': return 'ОЖИДАЕТ';
+      case 'ACCEPTED': return 'ПРИНЯТ';
+      case 'CONFIRMED': return 'ВЫПОЛНЕН';
+      case 'CANCELLED': return 'ОТМЕНЕН';
+      default: return status;
+    }
+  };
+
   return (
     <div className="space-y-6 pb-20">
       <div className="flex flex-col gap-4 px-1">
@@ -87,7 +97,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
             <div className="text-right">
               <p className="text-lg font-black text-slate-800">{o.total.toLocaleString()} ₽</p>
               <span className={`text-[7px] font-black uppercase px-2 py-0.5 rounded-lg ${o.status === 'NEW' ? 'bg-indigo-100 text-indigo-600' : o.status === 'ACCEPTED' ? 'bg-amber-100 text-amber-600' : o.status === 'CONFIRMED' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
-                {o.status === 'NEW' ? 'ОЖИДАЕТ' : o.status === 'ACCEPTED' ? 'ПРИНЯТ' : o.status === 'CONFIRMED' ? 'ВЫПОЛНЕН' : 'ОТМЕНЕН'}
+                {getStatusText(o.status)}
               </span>
             </div>
           </div>
@@ -101,7 +111,9 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-xl font-black text-slate-800">Заказ №{selectedOrder.id.slice(-4)}</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{getCustomerName(selectedOrder)}</p>
+                <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${selectedOrder.status === 'NEW' ? 'bg-indigo-50 text-indigo-600' : selectedOrder.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                   Статус: {getStatusText(selectedOrder.status)}
+                </span>
               </div>
               <button onClick={() => setSelectedOrder(null)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times"></i></button>
             </div>
@@ -132,11 +144,11 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
                   const prod = products.find(p => p.id === item.productId);
                   return (
                     <div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <div>
-                        <p className="font-bold text-slate-800 text-sm">{prod?.name || '---'}</p>
+                      <div className="min-w-0 flex-1 pr-2">
+                        <p className="font-bold text-slate-800 text-sm truncate">{prod?.name || '---'}</p>
                         <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {prod?.unit || 'шт'} x {item.price} ₽</p>
                       </div>
-                      <p className="font-black text-slate-800">{(item.quantity * item.price).toLocaleString()} ₽</p>
+                      <p className="font-black text-slate-800 shrink-0">{(item.quantity * item.price).toLocaleString()} ₽</p>
                     </div>
                   );
                 })}
@@ -155,7 +167,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
                     onClick={() => { onUpdateOrder({...selectedOrder, status: 'CANCELLED'}); setSelectedOrder(null); }}
                     className="flex-1 py-4 font-black text-red-500 uppercase tracking-widest text-[10px] border border-red-50 rounded-2xl"
                   >
-                    Отклонить
+                    Отмена
                   </button>
                 )}
 
@@ -168,19 +180,19 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
                   </button>
                 )}
 
-                {selectedOrder.status === 'ACCEPTED' && (
+                {(selectedOrder.status === 'ACCEPTED' || selectedOrder.status === 'NEW') && (
                   <button
                     onClick={() => { onConfirmOrder(selectedOrder); setSelectedOrder(null); }}
                     className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all uppercase tracking-widest text-[10px]"
                   >
-                    Выдать / В продажу
+                    {selectedOrder.status === 'NEW' ? 'Сразу выдать' : 'Выдать / Продать'}
                   </button>
                 )}
               </div>
 
               {selectedOrder.status === 'CONFIRMED' && (
                 <div className="flex flex-col items-center py-2 text-emerald-500 font-black text-[10px] uppercase">
-                   <i className="fas fa-check-circle mb-1 text-xl"></i> Заказ выдан и оплачен
+                   <i className="fas fa-check-circle mb-1 text-xl"></i> Заказ завершен
                 </div>
               )}
             </div>
