@@ -144,4 +144,5 @@ export type AppView =
   | 'MORE_MENU'
   | 'TENANT_ADMIN'
   | 'CLIENT_PORTAL'
-  | 'ORDERS_MANAGER';
+  | 'ORDERS_MANAGER'
+  | 'TARIFFS';
