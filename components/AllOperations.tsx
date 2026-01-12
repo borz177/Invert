@@ -191,17 +191,25 @@ const AllOperations: React.FC<AllOperationsProps> = ({
   const operations = useMemo(() => {
     const list: any[] = [];
     if (filter === 'ALL' || filter === 'SALES') {
-      sales.forEach(s => list.push({
-        id: s.id, date: s.date, type: 'SALE',
+    sales
+      .filter(s => !s.isDeleted) // ← скрываем удалённые
+      .forEach(s => list.push({
+        id: s.id,
+        date: s.date,
+        type: 'SALE',
         title: `Продажа №${s.id.slice(-4)}`,
         targetName: getCustomerName(s.customerId),
         targetIcon: 'fa-user',
         subtitle: `${s.items.length} поз. • ${s.paymentMethod === 'CASH' ? 'Нал' : s.paymentMethod === 'CARD' ? 'Карта' : 'В долг'}`,
-        amount: s.total, isPositive: true, icon: 'fa-shopping-cart',
+        amount: s.total,
+        isPositive: true,
+        icon: 'fa-shopping-cart',
         color: s.paymentMethod === 'DEBT' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600',
-        isDeleted: s.isDeleted, responsible: getEmployeeName(s.employeeId), raw: s
+        isDeleted: s.isDeleted,
+        responsible: getEmployeeName(s.employeeId),
+        raw: s
       }));
-    }
+  }
     if (filter === 'ALL' || filter === 'STOCK') {
       transactions.forEach(t => {
         const p = products.find(prod => prod.id === t.productId);
