@@ -398,7 +398,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
                 <div className="space-y-2">
                   <div className="flex justify-between text-xs"><span className="text-slate-500 font-bold">Тип:</span><span className="font-black text-slate-700">{selectedDetail.category || (selectedDetail.items ? 'Продажа' : 'Склад')}</span></div>
                   {selectedDetail.customerId && <div className="flex justify-between text-xs"><span className="text-slate-500 font-bold">Клиент:</span><span className="font-black text-indigo-600">{getCustomerName(selectedDetail.customerId)}</span></div>}
-                  {selectedDetail.supplierId && <div className="flex justify-between text-xs"><span className="text-slate-500 font-bold">Поставщик:</span><span className="font-black text-orange-600">{getSupplierName(selectedDetail.supplierId)}</span></div>}
+                  {selectedDetail.supplierId && <div className="flex justify-between text-xs"><span className="text-slate-500 font-bold">Поставщик:</span><span className="font-black text-orange-600">{getSupplierName(selectedDetail.shopName)}</span></div>}
                   <div className="flex justify-between text-xs"><span className="text-slate-500 font-bold">Ответственный:</span><span className="font-black text-slate-700">{getEmployeeName(selectedDetail.employeeId)}</span></div>
                 </div>
               </div>
