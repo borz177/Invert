@@ -42,6 +42,72 @@ const AllOperations: React.FC<AllOperationsProps> = ({
   const getCustomerName = (id?: string) => customers.find(c => c.id === id)?.name || 'Розничный клиент';
   const getSupplierName = (id?: string) => customers.find(s => (s as any).id === id)?.name || 'Поставщик';
 
+  const handlePrintReceipt = (sale: Sale) => {
+    const customer = customers.find(c => c.id === sale.customerId);
+    const shopName = settings?.shopName || "Магазин";
+
+    const receiptHtml = `
+      <div style="font-family: 'Courier New', Courier, monospace; width: 300px; padding: 20px; color: #000; font-size: 12px; line-height: 1.4;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h2 style="margin: 0; font-size: 18px; font-weight: bold;">${shopName.toUpperCase()}</h2>
+          <p style="margin: 5px 0;">ТОВАРНЫЙ ЧЕК</p>
+          <p style="margin: 0; font-size: 10px;">№ ${sale.id.slice(-6)} от ${new Date(sale.date).toLocaleString()}</p>
+        </div>
+        
+        <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 10px 0; margin-bottom: 10px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="text-align: left; font-size: 10px;">
+                <th style="padding-bottom: 5px;">Наименование</th>
+                <th style="text-align: right; padding-bottom: 5px;">Сумма</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sale.items.map(item => {
+                const p = products.find(prod => prod.id === item.productId);
+                return `
+                  <tr>
+                    <td style="padding-bottom: 3px;">
+                      ${p?.name || 'Товар'}<br/>
+                      <small>${item.quantity} x ${item.price} ₽</small>
+                    </td>
+                    <td style="text-align: right; vertical-align: top;">${(item.quantity * item.price).toLocaleString()} ₽</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; margin-bottom: 10px;">
+          <span>ИТОГО:</span>
+          <span>${sale.total.toLocaleString()} ₽</span>
+        </div>
+
+        <div style="font-size: 10px; border-top: 1px solid #eee; pt: 10px;">
+          <p style="margin: 2px 0;">Оплата: ${sale.paymentMethod === 'CASH' ? 'Наличные' : sale.paymentMethod === 'CARD' ? 'Карта' : 'В долг'}</p>
+          <p style="margin: 2px 0;">Клиент: ${customer?.name || 'Розничный клиент'}</p>
+          <p style="margin: 2px 0;">Продавец: ${getEmployeeName(sale.employeeId)}</p>
+        </div>
+
+        <div style="text-align: center; margin-top: 20px; font-size: 10px;">
+          <p>Спасибо за покупку!</p>
+        </div>
+      </div>
+    `;
+
+    const opt = {
+      margin: 10,
+      filename: `receipt-${sale.id.slice(-6)}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 3 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    // @ts-ignore
+    window.html2pdf().from(receiptHtml).set(opt).save();
+  };
+
   const operations = useMemo(() => {
     const list: any[] = [];
     if (filter === 'ALL' || filter === 'SALES') {
@@ -155,6 +221,9 @@ const AllOperations: React.FC<AllOperationsProps> = ({
                 {activeMenuId === `${op.type}-${op.id}` && (
                   <div className="absolute top-10 right-0 bg-white rounded-2xl shadow-2xl border border-slate-100 py-2 w-48 z-[100] animate-fade-in">
                     <button onClick={(e) => { e.stopPropagation(); setSelectedDetail(op.raw); setActiveMenuId(null); }} className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3"><i className="fas fa-info-circle text-indigo-400"></i> Детали</button>
+                    {op.type === 'SALE' && (
+                      <button onClick={(e) => { e.stopPropagation(); handlePrintReceipt(op.raw); setActiveMenuId(null); }} className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50"><i className="fas fa-print text-indigo-400"></i> Печать чека</button>
+                    )}
                     {op.type === 'SALE' && canDelete && (
                       <button onClick={(e) => { e.stopPropagation(); setEditingSale(op.raw); setActiveMenuId(null); }} className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50"><i className="fas fa-pen text-indigo-400"></i> Редактировать</button>
                     )}

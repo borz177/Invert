@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Product, Sale, Customer } from '../types';
+import { Product, Sale, Customer, AppSettings } from '../types';
 
 interface POSProps {
   products: Product[];
@@ -9,13 +9,15 @@ interface POSProps {
   setCart: React.Dispatch<React.SetStateAction<Array<{ id: string; name: string; price: number; cost: number; quantity: number; unit: string }>>>;
   onSale: (sale: Sale) => void;
   currentUserId?: string;
+  settings?: AppSettings;
 }
 
-const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, currentUserId }) => {
+const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, currentUserId, settings }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [successSale, setSuccessSale] = useState<Sale | null>(null);
 
   const [qtyModalProduct, setQtyModalProduct] = useState<Product | null>(null);
   const [inputQty, setInputQty] = useState<number>(1);
@@ -80,11 +82,77 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
   const discountAmount = (subtotal * discountPercent) / 100;
   const total = subtotal - discountAmount;
 
+  const handlePrint = (sale: Sale) => {
+    const cust = customers.find(c => c.id === sale.customerId);
+    const shopName = settings?.shopName || "Магазин";
+
+    const receiptHtml = `
+      <div style="font-family: 'Courier New', Courier, monospace; width: 300px; padding: 20px; color: #000; font-size: 12px; line-height: 1.4;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h2 style="margin: 0; font-size: 18px; font-weight: bold;">${shopName.toUpperCase()}</h2>
+          <p style="margin: 5px 0;">ТОВАРНЫЙ ЧЕК</p>
+          <p style="margin: 0; font-size: 10px;">№ ${sale.id.slice(-6)} от ${new Date(sale.date).toLocaleString()}</p>
+        </div>
+        
+        <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 10px 0; margin-bottom: 10px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="text-align: left; font-size: 10px;">
+                <th style="padding-bottom: 5px;">Наименование</th>
+                <th style="text-align: right; padding-bottom: 5px;">Сумма</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sale.items.map(item => {
+                const p = products.find(prod => prod.id === item.productId);
+                return `
+                  <tr>
+                    <td style="padding-bottom: 3px;">
+                      ${p?.name || 'Товар'}<br/>
+                      <small>${item.quantity} x ${item.price} ₽</small>
+                    </td>
+                    <td style="text-align: right; vertical-align: top;">${(item.quantity * item.price).toLocaleString()} ₽</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; margin-bottom: 10px;">
+          <span>ИТОГО:</span>
+          <span>${sale.total.toLocaleString()} ₽</span>
+        </div>
+
+        <div style="font-size: 10px; border-top: 1px solid #eee; pt: 10px;">
+          <p style="margin: 2px 0;">Оплата: ${sale.paymentMethod === 'CASH' ? 'Наличные' : sale.paymentMethod === 'CARD' ? 'Карта' : 'В долг'}</p>
+          <p style="margin: 2px 0;">Клиент: ${cust?.name || 'Розничный клиент'}</p>
+        </div>
+
+        <div style="text-align: center; margin-top: 20px; font-size: 10px;">
+          <p>Спасибо за покупку!</p>
+        </div>
+      </div>
+    `;
+
+    const opt = {
+      margin: 10,
+      filename: `receipt-${sale.id.slice(-6)}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 3 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    // @ts-ignore
+    window.html2pdf().from(receiptHtml).set(opt).save();
+    setSuccessSale(null);
+  };
+
   const checkout = (method: 'CASH' | 'CARD' | 'DEBT') => {
     if (cart.length === 0) return;
     if (method === 'DEBT' && !selectedCustomerId) { alert("Выберите клиента для продажи в долг"); return; }
 
-    onSale({
+    const newSale: Sale = {
       id: Date.now().toString(),
       employeeId: currentUserId || 'admin',
       items: cart.map(i => ({ productId: i.id, quantity: i.quantity, price: i.price, cost: i.cost })),
@@ -92,12 +160,13 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
       paymentMethod: method,
       date: new Date().toISOString(),
       customerId: selectedCustomerId || undefined
-    });
+    };
 
-    setCart([]); // Очистка корзины после оформления
+    onSale(newSale);
+    setSuccessSale(newSale);
+    setCart([]);
     setSelectedCustomerId('');
     setIsCartOpen(false);
-    alert('Продажа успешно оформлена!');
   };
 
   const filteredBySearch = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -157,7 +226,7 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
 
       {qtyModalProduct && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-[40px] shadow-2xl p-8 animate-slide-up space-y-6">
+          <div className="bg-white w-full max-sm rounded-[40px] shadow-2xl p-8 animate-slide-up space-y-6">
             <div>
               <h3 className="text-xl font-black text-slate-800 mb-1">{qtyModalProduct.name}</h3>
               <p className="text-xs text-slate-400">В наличии: <span className="font-bold text-indigo-600">{qtyModalProduct.quantity} {qtyModalProduct.unit}</span></p>
@@ -257,6 +326,24 @@ const POS: React.FC<POSProps> = ({ products, customers, cart, setCart, onSale, c
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {successSale && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-[40px] shadow-2xl w-full max-w-sm text-center space-y-6 animate-slide-up">
+            <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-3xl flex items-center justify-center mx-auto text-3xl"><i className="fas fa-check"></i></div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-slate-800">Продажа оформлена!</h3>
+              <p className="text-sm text-slate-400 font-medium leading-relaxed">Сумма: {successSale.total.toLocaleString()} ₽</p>
+            </div>
+            <div className="space-y-3">
+              <button onClick={() => handlePrint(successSale)} className="w-full bg-indigo-600 text-white p-5 rounded-2xl font-black shadow-lg flex items-center justify-center gap-3">
+                <i className="fas fa-print"></i> ПЕЧАТЬ ЧЕКА
+              </button>
+              <button onClick={() => setSuccessSale(null)} className="w-full py-4 text-slate-400 font-bold">Закрыть</button>
+            </div>
           </div>
         </div>
       )}
