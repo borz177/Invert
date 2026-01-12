@@ -129,7 +129,10 @@ const App: React.FC = () => {
 
   const handleAddCashEntry = (entry: CashEntry) => {
     setCashEntries([entry, ...cashEntries]);
-    if (entry.type === 'INCOME' && entry.customerId) {
+    // ВАЖНО: Уменьшаем долг клиента только если это явная "Оплата от клиента" (пополнение баланса),
+    // а не автоматическая проводка наличной продажи (Категория: 'Продажа').
+    // Наличная продажа не должна уменьшать СТАРЫЙ долг, она просто закрывает ТЕКУЩУЮ покупку.
+    if (entry.type === 'INCOME' && entry.customerId && entry.category !== 'Продажа') {
       setCustomers(prev => prev.map(c => c.id === entry.customerId ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - entry.amount) } : c));
     }
     if (entry.type === 'EXPENSE' && entry.supplierId) {
