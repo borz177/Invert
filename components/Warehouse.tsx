@@ -7,8 +7,8 @@ interface WarehouseProps {
   suppliers: Supplier[];
   transactions: Transaction[];
   categories: string[];
-  batch: Array<{productId: string, name: string, quantity: number, cost: number}>;
-  setBatch: React.Dispatch<React.SetStateAction<Array<{productId: string, name: string, quantity: number, cost: number}>>>;
+  batch: Array<{productId: string, name: string, quantity: number, cost: number, unit: string}>;
+  setBatch: React.Dispatch<React.SetStateAction<Array<{productId: string, name: string, quantity: number, cost: number, unit: string}>>>;
   onTransaction: (t: Transaction) => void;
   onTransactionsBulk: (ts: Transaction[]) => void;
   onAddCashEntry?: (entry: Omit<CashEntry, 'id' | 'date' | 'employeeId'> & { id?: string }) => void;
@@ -16,16 +16,22 @@ interface WarehouseProps {
 }
 
 const Warehouse: React.FC<WarehouseProps> = ({
-  products, suppliers, transactions, categories, batch, setBatch,
-  onTransaction, onTransactionsBulk, onAddCashEntry, onAddProduct
+  products, suppliers, categories, batch, setBatch,
+  onTransactionsBulk, onAddCashEntry, onAddProduct
 }) => {
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'DEBT'>('DEBT');
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]);
-  const [docNumber, setDocNumber] = useState(`ВХ-${Date.now().toString().slice(-6)}`);
+  const [isDocOpen, setIsDocOpen] = useState(false);
 
-  // Форма нового товара
+  // Модалка ввода параметров для выбранного товара
+  const [activeItem, setActiveItem] = useState<Product | null>(null);
+  const [inputQty, setInputQty] = useState<number>(1);
+  const [inputCost, setInputCost] = useState<number>(0);
+
+  // Модалка создания нового товара
   const [showNewProductForm, setShowNewProductForm] = useState(false);
   const [newProd, setNewProd] = useState({
     name: '',
@@ -35,7 +41,6 @@ const Warehouse: React.FC<WarehouseProps> = ({
     unit: 'шт' as any
   });
 
-  // Авто-выбор поставщика
   useEffect(() => {
     if (suppliers.length > 0 && !selectedSupplier) {
       setSelectedSupplier(suppliers[0].id);
@@ -43,25 +48,30 @@ const Warehouse: React.FC<WarehouseProps> = ({
   }, [suppliers]);
 
   const filteredProducts = useMemo(() => {
-    if (!searchTerm) return [];
-    const low = searchTerm.toLowerCase();
-    return products
-      .filter(p => p.type !== 'SERVICE' && (p.name.toLowerCase().includes(low) || p.sku.toLowerCase().includes(low)))
-      .slice(0, 5);
-  }, [searchTerm, products]);
-
-  const addToBatch = (p: Product) => {
-    const existing = batch.find(b => b.productId === p.id);
-    if (existing) {
-      setBatch(batch.map(b => b.productId === p.id ? { ...b, quantity: b.quantity + 1 } : b));
-    } else {
-      setBatch([...batch, { productId: p.id, name: p.name, quantity: 1, cost: p.cost }]);
+    let result = products.filter(p => p.type !== 'SERVICE');
+    if (selectedCategory) result = result.filter(p => p.category === selectedCategory);
+    if (searchTerm) {
+      const low = searchTerm.toLowerCase();
+      result = result.filter(p => p.name.toLowerCase().includes(low) || p.sku.toLowerCase().includes(low));
     }
-    setSearchTerm('');
+    return result;
+  }, [selectedCategory, searchTerm, products]);
+
+  const openAddItem = (p: Product) => {
+    setActiveItem(p);
+    setInputQty(1);
+    setInputCost(p.cost);
   };
 
-  const updateBatchItem = (id: string, field: 'quantity' | 'cost', value: number) => {
-    setBatch(batch.map(item => item.productId === id ? { ...item, [field]: value } : item));
+  const confirmAddToDoc = () => {
+    if (!activeItem) return;
+    const existing = batch.find(b => b.productId === activeItem.id);
+    if (existing) {
+      setBatch(batch.map(b => b.productId === activeItem.id ? { ...b, quantity: b.quantity + inputQty, cost: inputCost } : b));
+    } else {
+      setBatch([...batch, { productId: activeItem.id, name: activeItem.name, quantity: inputQty, cost: inputCost, unit: activeItem.unit }]);
+    }
+    setActiveItem(null);
   };
 
   const handleCreateProduct = (e: React.FormEvent) => {
@@ -80,7 +90,7 @@ const Warehouse: React.FC<WarehouseProps> = ({
       type: 'PRODUCT'
     };
     onAddProduct(product);
-    setBatch([...batch, { productId: newId, name: product.name, quantity: 1, cost: product.cost }]);
+    setBatch([...batch, { productId: newId, name: product.name, quantity: 1, cost: product.cost, unit: product.unit }]);
     setShowNewProductForm(false);
     setNewProd({ name: '', category: categories[0] || 'Другое', price: 0, cost: 0, unit: 'шт' });
   };
@@ -101,7 +111,7 @@ const Warehouse: React.FC<WarehouseProps> = ({
       pricePerUnit: item.cost,
       paymentMethod,
       date: receiptDate + 'T' + new Date().toLocaleTimeString('en-GB'),
-      note: `Документ №${docNumber}. Поставщик: ${supplier?.name}`,
+      note: `Приход. Поставщик: ${supplier?.name}`,
       employeeId: 'admin',
       batchId
     }));
@@ -112,184 +122,224 @@ const Warehouse: React.FC<WarehouseProps> = ({
         amount: totalCost,
         type: 'EXPENSE',
         category: 'Закуп товара',
-        description: `Оплата по док. №${docNumber} (${supplier?.name})`,
+        description: `Оплата поставщику ${supplier?.name}`,
         supplierId: selectedSupplier
       });
     }
 
     onTransactionsBulk(ts);
     setBatch([]);
-    setDocNumber(`ВХ-${Date.now().toString().slice(-6)}`);
-    alert('Документ проведен!');
+    setIsDocOpen(false);
+    alert('Оприходование завершено успешно!');
   };
 
   const totalSum = batch.reduce((acc, i) => acc + (i.quantity * i.cost), 0);
 
   return (
-    <div className="space-y-6 pb-24 animate-fade-in">
-      {/* Шапка документа */}
-      <div className="bg-white p-6 rounded-[40px] shadow-sm border border-slate-100 space-y-4">
-        <div className="flex justify-between items-center">
-          <h2 className="text-xl font-black text-slate-800">Накладная прихода</h2>
-          <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-[10px] font-black uppercase">{docNumber}</span>
+    <div className="flex flex-col h-full space-y-4 pb-24">
+      {/* Шапка с основными данными документа */}
+      <div className="bg-white p-5 rounded-[32px] shadow-sm border border-slate-100 grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <label className="text-[9px] font-black text-slate-400 uppercase ml-1 tracking-widest">Дата</label>
+          <input
+            type="date"
+            className="w-full p-3 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-xs text-slate-700"
+            value={receiptDate}
+            onChange={e => setReceiptDate(e.target.value)}
+          />
         </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-black text-slate-400 uppercase ml-1 tracking-widest">Поставщик</label>
+          <select
+            className="w-full p-3 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-xs text-slate-700"
+            value={selectedSupplier}
+            onChange={e => setSelectedSupplier(e.target.value)}
+          >
+            <option value="">-- Выберите --</option>
+            {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+      </div>
 
+      {/* Выбор товара - Навигация */}
+      <div className="flex justify-between items-center px-1">
+        <h2 className="text-xl font-black text-slate-800">
+          {selectedCategory ? (
+            <button onClick={() => setSelectedCategory(null)} className="flex items-center gap-2 text-indigo-600">
+              <i className="fas fa-arrow-left text-sm"></i> {selectedCategory}
+            </button>
+          ) : 'Выбор товара'}
+        </h2>
+        <button
+          onClick={() => setShowNewProductForm(true)}
+          className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border border-emerald-100 active:scale-95 transition-all"
+        >
+          + Создать новый
+        </button>
+      </div>
+
+      {/* Поиск */}
+      <div className="relative">
+        <i className="fas fa-search absolute left-4 top-4 text-slate-400"></i>
+        <input
+          className="w-full p-4 pl-12 rounded-2xl bg-white shadow-sm border border-slate-100 outline-none focus:ring-2 focus:ring-indigo-500/10 font-medium"
+          placeholder="Поиск по названию или SKU..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+        />
+      </div>
+
+      {/* Сетка категорий или товаров */}
+      {!selectedCategory && !searchTerm ? (
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Дата операции</label>
-            <input
-              type="date"
-              className="w-full p-3 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-xs"
-              value={receiptDate}
-              onChange={e => setReceiptDate(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Поставщик</label>
-            <select
-              className="w-full p-3 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-xs"
-              value={selectedSupplier}
-              onChange={e => setSelectedSupplier(e.target.value)}
+          {categories.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center hover:border-indigo-300 active:scale-95 transition-all"
             >
-              <option value="">Выберите...</option>
-              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100">
-          <button onClick={() => setPaymentMethod('DEBT')} className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${paymentMethod === 'DEBT' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400'}`}>В долг</button>
-          <button onClick={() => setPaymentMethod('CASH')} className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${paymentMethod === 'CASH' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400'}`}>Оплачено (из кассы)</button>
-        </div>
-      </div>
-
-      {/* Поиск и подбор товаров */}
-      <div className="relative z-[60]">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <i className="fas fa-search absolute left-4 top-4 text-slate-300"></i>
-            <input
-              className="w-full p-4 pl-12 rounded-2xl bg-white shadow-sm border border-slate-100 outline-none focus:ring-2 focus:ring-indigo-500/10 font-medium"
-              placeholder="Поиск товара для добавления..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <button
-            onClick={() => setShowNewProductForm(true)}
-            className="w-14 h-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg active:scale-90 transition-all shrink-0"
-            title="Создать новый товар"
-          >
-            <i className="fas fa-plus"></i>
-          </button>
-        </div>
-
-        {filteredProducts.length > 0 && (
-          <div className="absolute top-16 left-0 right-0 bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden animate-fade-in divide-y divide-slate-50">
-            {filteredProducts.map(p => (
-              <button
-                key={p.id}
-                onClick={() => addToBatch(p)}
-                className="w-full p-4 text-left hover:bg-indigo-50 transition-colors flex justify-between items-center"
-              >
-                <div>
-                  <p className="font-bold text-slate-800 text-sm">{p.name}</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">{p.category} • Ост: {p.quantity} {p.unit}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs font-black text-indigo-600">{p.cost} ₽</p>
-                  <p className="text-[8px] text-slate-300 font-bold uppercase">Закуп</p>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Список товаров в документе */}
-      <div className="space-y-3">
-        <div className="flex justify-between items-center px-2">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Состав документа ({batch.length})</h3>
-          {batch.length > 0 && (
-            <button onClick={() => setBatch([])} className="text-[10px] font-black text-red-400 uppercase tracking-widest hover:text-red-600 transition-colors">Очистить список</button>
-          )}
-        </div>
-
-        <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 divide-y divide-slate-50 overflow-hidden">
-          {batch.map(item => (
-            <div key={item.productId} className="p-5 space-y-4">
-              <div className="flex justify-between items-start">
-                <p className="font-bold text-slate-800 text-sm flex-1 pr-4">{item.name}</p>
-                <button onClick={() => setBatch(batch.filter(b => b.productId !== item.productId))} className="text-slate-300 hover:text-red-500"><i className="fas fa-times"></i></button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Количество</label>
-                  <div className="flex items-center bg-slate-50 rounded-xl border border-slate-100 overflow-hidden">
-                    <button onClick={() => updateBatchItem(item.productId, 'quantity', Math.max(1, item.quantity - 1))} className="w-10 h-10 flex items-center justify-center text-slate-400"><i className="fas fa-minus text-[10px]"></i></button>
-                    <input
-                      type="number"
-                      className="flex-1 text-center bg-transparent outline-none font-black text-sm"
-                      value={item.quantity}
-                      onChange={e => updateBatchItem(item.productId, 'quantity', parseFloat(e.target.value) || 0)}
-                    />
-                    <button onClick={() => updateBatchItem(item.productId, 'quantity', item.quantity + 1)} className="w-10 h-10 flex items-center justify-center text-slate-400"><i className="fas fa-plus text-[10px]"></i></button>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Цена закупа (₽)</label>
-                  <input
-                    type="number"
-                    className="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl outline-none font-black text-sm text-center text-indigo-600"
-                    value={item.cost}
-                    onChange={e => updateBatchItem(item.productId, 'cost', parseFloat(e.target.value) || 0)}
-                  />
-                </div>
-              </div>
-            </div>
+              <div className="w-14 h-14 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center mb-3"><i className="fas fa-folder text-2xl"></i></div>
+              <h3 className="font-black text-slate-800 text-sm truncate w-full">{cat}</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Перейти</p>
+            </button>
           ))}
-
-          {batch.length === 0 && (
-            <div className="py-20 text-center text-slate-300 flex flex-col items-center">
-              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 text-slate-200">
-                <i className="fas fa-file-import text-3xl"></i>
-              </div>
-              <p className="font-bold text-sm">Документ пуст</p>
-              <p className="text-[10px] uppercase font-bold mt-1 max-w-[200px]">Воспользуйтесь поиском выше, чтобы добавить товары</p>
-            </div>
-          )}
         </div>
-      </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 pb-20">
+          {filteredProducts.map(p => (
+            <button
+              key={p.id}
+              onClick={() => openAddItem(p)}
+              className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm text-left active:scale-95 transition-all group"
+            >
+              <div className="text-[8px] font-black text-indigo-400 uppercase mb-1">{p.category}</div>
+              <div className="font-bold text-slate-800 text-xs line-clamp-2 min-h-[32px] group-hover:text-indigo-600">{p.name}</div>
+              <div className="flex justify-between items-end mt-3 pt-2 border-t border-slate-50">
+                <div className="text-[9px] font-black text-slate-400 uppercase">Ост: <span className="text-slate-800">{p.quantity}</span></div>
+                <div className="w-8 h-8 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg"><i className="fas fa-plus text-xs"></i></div>
+              </div>
+            </button>
+          ))}
+          {filteredProducts.length === 0 && <div className="col-span-2 text-center py-10 text-slate-300 italic">Нет товаров</div>}
+        </div>
+      )}
 
-      {/* Итоговая панель */}
+      {/* Плавающая кнопка документа (Drawer Trigger) */}
       {batch.length > 0 && (
-        <div className="sticky bottom-24 left-0 right-0 bg-indigo-600 text-white p-6 rounded-[32px] flex justify-between items-center shadow-2xl z-50 animate-slide-up">
-          <div className="text-left">
-            <p className="text-[10px] font-black uppercase opacity-60">Итого к приходу</p>
-            <p className="text-2xl font-black">{totalSum.toLocaleString()} ₽</p>
-          </div>
+        <div className="fixed bottom-24 left-4 right-4 z-[80]">
           <button
-            onClick={handlePostDocument}
-            className="bg-white text-indigo-600 px-8 py-3 rounded-2xl font-black uppercase tracking-widest text-xs shadow-lg active:scale-95 transition-all"
+            onClick={() => setIsDocOpen(true)}
+            className="w-full bg-slate-800 text-white p-5 rounded-[32px] shadow-2xl flex justify-between items-center animate-slide-up"
           >
-            ПРОВЕСТИ
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center font-black">{batch.length}</div>
+              <div className="text-left">
+                <p className="text-[10px] font-black uppercase opacity-60">Документ прихода</p>
+                <p className="text-lg font-black">{totalSum.toLocaleString()} ₽</p>
+              </div>
+            </div>
+            <div className="bg-indigo-600 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">Открыть</div>
           </button>
         </div>
       )}
 
-      {/* Модалка быстрого создания товара */}
+      {/* Оверлей ввода количества и цены */}
+      {activeItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[40px] shadow-2xl p-8 animate-slide-up space-y-6">
+            <div className="text-center">
+              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">{activeItem.category}</p>
+              <h3 className="text-xl font-black text-slate-800">{activeItem.name}</h3>
+            </div>
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Кол-во к приходу ({activeItem.unit})</label>
+                <div className="flex items-center bg-slate-50 border border-slate-100 rounded-2xl h-14 overflow-hidden">
+                  <button onClick={() => setInputQty(Math.max(1, inputQty - 1))} className="px-5 h-full text-slate-400"><i className="fas fa-minus"></i></button>
+                  <input type="number" step="any" className="w-full text-center bg-transparent outline-none font-black text-lg" value={inputQty} onChange={e => setInputQty(parseFloat(e.target.value) || 0)} />
+                  <button onClick={() => setInputQty(inputQty + 1)} className="px-5 h-full text-slate-400"><i className="fas fa-plus"></i></button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Цена закупа (за ед.)</label>
+                <input type="number" step="0.01" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-black text-lg text-center text-indigo-600" value={inputCost} onChange={e => setInputCost(parseFloat(e.target.value) || 0)} />
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setActiveItem(null)} className="flex-1 py-4 font-bold text-slate-400">Отмена</button>
+              <button onClick={confirmAddToDoc} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg">ДОБАВИТЬ</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Список товаров в документе (Full Screen Drawer) */}
+      {isDocOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-[100] flex items-end justify-center">
+          <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-6 flex flex-col max-h-[90vh] animate-slide-up">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-xl font-black text-slate-800">Состав накладной</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Всего: {batch.length} позиций</p>
+              </div>
+              <button onClick={() => setIsDocOpen(false)} className="w-12 h-12 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center"><i className="fas fa-times"></i></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar pb-6">
+              <div className="bg-indigo-50/50 p-4 rounded-3xl border border-indigo-100 mb-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-indigo-400 uppercase">Оплата из кассы</span>
+                  <button
+                    onClick={() => setPaymentMethod(paymentMethod === 'CASH' ? 'DEBT' : 'CASH')}
+                    className={`w-12 h-6 rounded-full transition-all flex items-center px-1 ${paymentMethod === 'CASH' ? 'bg-emerald-500 justify-end' : 'bg-slate-300 justify-start'}`}
+                  >
+                    <div className="w-4 h-4 bg-white rounded-full shadow-sm"></div>
+                  </button>
+                </div>
+              </div>
+
+              {batch.map(item => (
+                <div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="min-w-0 flex-1 pr-4">
+                    <p className="font-bold text-slate-800 text-sm truncate">{item.name}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                      {item.quantity} {item.unit} x {item.cost} ₽
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <p className="font-black text-slate-800">{(item.quantity * item.cost).toLocaleString()} ₽</p>
+                    <button onClick={() => setBatch(batch.filter(b => b.productId !== item.productId))} className="text-red-300 hover:text-red-500"><i className="fas fa-trash-alt"></i></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 space-y-4">
+              <div className="flex justify-between items-end px-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Итоговая сумма</span>
+                <span className="text-3xl font-black text-slate-800">{totalSum.toLocaleString()} ₽</span>
+              </div>
+              <button
+                onClick={handlePostDocument}
+                className="w-full bg-indigo-600 text-white p-5 rounded-[24px] font-black uppercase shadow-xl shadow-indigo-100 active:scale-95 transition-all"
+              >
+                ПРОВЕСТИ ПРИХОД
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Быстрое создание нового товара */}
       {showNewProductForm && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
           <form onSubmit={handleCreateProduct} className="bg-white w-full max-w-sm rounded-[40px] shadow-2xl p-8 animate-slide-up space-y-5">
             <h3 className="text-xl font-black text-slate-800 text-center">Создать и добавить</h3>
-
             <div className="space-y-4">
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Название</label>
                 <input required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold" value={newProd.name} onChange={e => setNewProd({...newProd, name: e.target.value})} placeholder="Напр: Платье белое" />
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Категория</label>
@@ -307,22 +357,20 @@ const Warehouse: React.FC<WarehouseProps> = ({
                   </select>
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Цена закупа</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Закуп</label>
                   <input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-black text-indigo-600" value={newProd.cost || ''} onChange={e => setNewProd({...newProd, cost: parseFloat(e.target.value) || 0})} />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Цена продажи</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Продажа</label>
                   <input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-black text-emerald-600" value={newProd.price || ''} onChange={e => setNewProd({...newProd, price: parseFloat(e.target.value) || 0})} />
                 </div>
               </div>
             </div>
-
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={() => setShowNewProductForm(false)} className="flex-1 py-4 font-bold text-slate-400">Отмена</button>
-              <button type="submit" className="flex-1 bg-indigo-600 text-white py-4 rounded-3xl font-black shadow-lg shadow-indigo-100">СОЗДАТЬ</button>
+              <button type="submit" className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg">СОЗДАТЬ</button>
             </div>
           </form>
         </div>
