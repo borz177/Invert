@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { Sale, Transaction, CashEntry, Product, Employee, Customer, AppSettings } from '../types';
 
@@ -191,25 +190,25 @@ const AllOperations: React.FC<AllOperationsProps> = ({
   const operations = useMemo(() => {
     const list: any[] = [];
     if (filter === 'ALL' || filter === 'SALES') {
-    sales
-      .filter(s => !s.isDeleted) // ← скрываем удалённые
-      .forEach(s => list.push({
-        id: s.id,
-        date: s.date,
-        type: 'SALE',
-        title: `Продажа №${s.id.slice(-4)}`,
-        targetName: getCustomerName(s.customerId),
-        targetIcon: 'fa-user',
-        subtitle: `${s.items.length} поз. • ${s.paymentMethod === 'CASH' ? 'Нал' : s.paymentMethod === 'CARD' ? 'Карта' : 'В долг'}`,
-        amount: s.total,
-        isPositive: true,
-        icon: 'fa-shopping-cart',
-        color: s.paymentMethod === 'DEBT' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600',
-        isDeleted: s.isDeleted,
-        responsible: getEmployeeName(s.employeeId),
-        raw: s
-      }));
-  }
+      sales
+        .filter(s => !s.isDeleted)
+        .forEach(s => list.push({
+          id: s.id,
+          date: s.date,
+          type: 'SALE',
+          title: `Продажа №${s.id.slice(-4)}`,
+          targetName: getCustomerName(s.customerId),
+          targetIcon: 'fa-user',
+          subtitle: `${s.items.length} поз. • ${s.paymentMethod === 'CASH' ? 'Нал' : s.paymentMethod === 'CARD' ? 'Карта' : 'В долг'}`,
+          amount: s.total,
+          isPositive: true,
+          icon: 'fa-shopping-cart',
+          color: s.paymentMethod === 'DEBT' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600',
+          isDeleted: s.isDeleted,
+          responsible: getEmployeeName(s.employeeId),
+          raw: s
+        }));
+    }
     if (filter === 'ALL' || filter === 'STOCK') {
       transactions.forEach(t => {
         const p = products.find(prod => prod.id === t.productId);
@@ -249,18 +248,13 @@ const AllOperations: React.FC<AllOperationsProps> = ({
   };
 
   const handleSaleUpdateSubmit = (e: React.FormEvent) => {
-  e.preventDefault();
-  if (editingSale) {
-    // Передаём И старую, и новую версию для корректного расчёта
-    const originalSale = sales.find(s => s.id === editingSale.id);
-    onUpdateSale({
-      original: originalSale,
-      updated: editingSale
-    } as any); // лучше создать отдельный тип
-    setEditingSale(null);
-    setActiveMenuId(null);
-  }
-};
+    e.preventDefault();
+    if (editingSale) {
+      onUpdateSale(editingSale); // Передаём только обновлённую версию
+      setEditingSale(null);
+      setActiveMenuId(null);
+    }
+  };
 
   return (
     <div className="space-y-6 pb-20" onClick={() => setActiveMenuId(null)}>
@@ -320,9 +314,10 @@ const AllOperations: React.FC<AllOperationsProps> = ({
                     {op.type === 'SALE' && canDelete && (
                       <button onClick={(e) => { e.stopPropagation(); setEditingSale(op.raw); setActiveMenuId(null); }} className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50"><i className="fas fa-pen text-indigo-400"></i> Редактировать</button>
                     )}
-                    {canDelete && (
+                    {/* УДАЛЕНИЕ ВРЕМЕННО ОТКЛЮЧЕНО */}
+                    {/* {canDelete && (
                       <button onClick={(e) => { e.stopPropagation(); if(confirm('Удалить операцию?')) { if(op.type==='SALE') onDeleteSale(op.id); else if(op.type==='STOCK') onDeleteTransaction(op.id); else onDeleteCashEntry(op.id); } }} className="w-full px-4 py-3 text-left text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-50"><i className="fas fa-trash"></i> Удалить</button>
-                    )}
+                    )} */}
                   </div>
                 )}
               </div>

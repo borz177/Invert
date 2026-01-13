@@ -157,11 +157,17 @@ const App: React.FC = () => {
   };
 
   const handleConfirmOrder = (order: Order) => {
+  // 1. Списываем товары со склада
+  setProducts(prev => prev.map(p => {
+    const it = order.items.find(x => x.productId === p.id);
+    return (it && p.type !== 'SERVICE')
+      ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) }
+      : p;
+  }));
+
+  // 2. Определяем клиента: если в заказе есть примечание [Имя:...], создаём нового
   let finalCustomerId = order.customerId;
   let updatedCustomers = [...customers];
-
-  // Определяем, нужно ли увеличивать долг
-  const shouldIncreaseDebt = order.paymentMethod === 'DEBT';
 
   if (order.note && order.note.includes('[Имя:')) {
     const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
@@ -169,44 +175,43 @@ const App: React.FC = () => {
     const name = matchName ? matchName[1].trim() : 'Новый клиент';
     const phone = matchPhone ? matchPhone[1].trim() : '';
 
-    const existing = customers.find(c => (phone && c.phone === phone) || (c.id === order.customerId));
+    // Ищем существующего клиента по телефону или ID
+    const existing = customers.find(c =>
+      (phone && c.phone === phone) || (c.id === order.customerId)
+    );
+
     if (!existing) {
-      // Создаём нового клиента: долг = сумме заказа ТОЛЬКО если в долг
-      const newCust: Customer = { 
-        id: `CUST-${Date.now()}`, 
-        name, 
-        phone, 
-        debt: shouldIncreaseDebt ? order.total : 0, 
-        discount: 0 
+      // Создаём нового клиента БЕЗ долга (долг добавим ниже, если нужно)
+      const newCust: Customer = {
+        id: `CUST-${Date.now()}`,
+        name,
+        phone,
+        debt: 0,
+        discount: 0
       };
       updatedCustomers = [newCust, ...customers];
       finalCustomerId = newCust.id;
     } else {
       finalCustomerId = existing.id;
-      // Увеличиваем долг существующего клиента ТОЛЬКО если в долг
-      if (shouldIncreaseDebt) {
-        updatedCustomers = customers.map(c =>
-          c.id === existing.id
-            ? { ...c, debt: (Number(c.debt) || 0) + order.total }
-            : c
-        );
-      }
     }
-  } else if (finalCustomerId && shouldIncreaseDebt) {
-    // Увеличиваем долг существующего клиента ТОЛЬКО если в долг
-    updatedCustomers = customers.map(c =>
+  }
+
+  // 3. Увеличиваем долг ТОЛЬКО если оплата "в долг"
+  if (order.paymentMethod === 'DEBT' && finalCustomerId) {
+    updatedCustomers = updatedCustomers.map(c =>
       c.id === finalCustomerId
         ? { ...c, debt: (Number(c.debt) || 0) + order.total }
         : c
     );
   }
 
+  // 4. Создаём продажу
   const newSale: Sale = {
     id: `SALE-ORD-${order.id}`,
     employeeId: currentUser?.id || 'admin',
-    items: order.items.map(it => ({ 
-      ...it, 
-      cost: products.find(p => p.id === it.productId)?.cost || 0 
+    items: order.items.map(it => ({
+      ...it,
+      cost: products.find(p => p.id === it.productId)?.cost || 0
     })),
     total: order.total,
     paymentMethod: order.paymentMethod || 'DEBT',
@@ -214,22 +219,14 @@ const App: React.FC = () => {
     customerId: finalCustomerId
   };
 
-  // Списываем товары со склада
-  setProducts(products.map(p => {
-    const it = order.items.find(x => x.productId === p.id);
-    return (it && p.type !== 'SERVICE') 
-      ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) } 
-      : p;
-  }));
-
-  setSales([newSale, ...sales]);
-  setOrders(orders.map(o => 
-    o.id === order.id 
-      ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } 
-      : o
+  // 5. Обновляем заказ и состояние
+  setOrders(prev => prev.map(o =>
+    o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o
   ));
   setCustomers(updatedCustomers);
-  alert('Заказ выдан! Сформирована продажа и обновлен долг клиента.');
+  setSales(prev => [newSale, ...prev]);
+
+  alert('Заказ выдан!');
 };
 
   const handleDeleteSale = (saleId: string) => {
