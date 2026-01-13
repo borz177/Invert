@@ -64,43 +64,47 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
         <h2 className="text-2xl font-black text-slate-800">Заказы клиентов</h2>
         <div className="flex gap-1 overflow-x-auto no-scrollbar pb-2">
           {(['ALL', 'NEW', 'ACCEPTED', 'CONFIRMED', 'CANCELLED'] as const).map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all shrink-0 relative ${filter === f ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100' : 'bg-white text-slate-400 border-slate-100'}`}
-            >
-              {f === 'ALL' ? 'Все' : f === 'NEW' ? 'Новые' : f === 'ACCEPTED' ? 'Принятые' : f === 'CONFIRMED' ? 'Готовы' : 'Отмена'}
-              {/* Счётчики только для Новых и Принятых */}
-              {f === 'NEW' && newCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-full animate-pulse">
-                  {newCount}
-                </span>
-              )}
-              {f === 'ACCEPTED' && acceptedCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-full">
-                  {acceptedCount}
-                </span>
-              )}
-            </button>
+              <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all shrink-0 relative ${filter === f ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100' : 'bg-white text-slate-400 border-slate-100'}`}
+              >
+                {f === 'ALL' ? 'Все' : f === 'NEW' ? 'Новые' : f === 'ACCEPTED' ? 'Принятые' : f === 'CONFIRMED' ? 'Готовы' : 'Отмена'}
+                {/* Счётчики */}
+                {f === 'NEW' && newCount > 0 && (
+                    <span
+                        className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white text-[8px] font-black flex items-center justify-center rounded-full animate-pulse z-10 transform translate-x-1 -translate-y-1">
+          {newCount}
+        </span>
+                )}
+                {f === 'ACCEPTED' && acceptedCount > 0 && (
+                    <span
+                        className="absolute top-0 right-0 w-5 h-5 bg-amber-500 text-white text-[8px] font-black flex items-center justify-center rounded-full z-10 transform translate-x-1 -translate-y-1">
+          {acceptedCount}
+        </span>
+                )}
+              </button>
           ))}
         </div>
       </div>
 
       <div className="space-y-3">
         {filteredOrders.map(o => (
-          <div
-            key={o.id}
-            onClick={() => setSelectedOrder(o)}
-            className="bg-white p-5 rounded-[32px] shadow-sm border border-slate-100 flex justify-between items-center active:scale-95 transition-all hover:border-indigo-200"
-          >
-            <div className="flex items-center gap-4 min-w-0 pr-2">
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0 ${o.status === 'NEW' ? 'bg-indigo-50 text-indigo-500 animate-pulse' : o.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : o.status === 'CONFIRMED' ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'}`}>
-                <i className={`fas ${o.status === 'NEW' ? 'fa-bell' : o.status === 'ACCEPTED' ? 'fa-clock' : o.status === 'CONFIRMED' ? 'fa-check' : 'fa-times'}`}></i>
-              </div>
-              <div className="min-w-0">
-                <p className="font-bold text-slate-800 truncate">{getCustomerName(o)}</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Заказ №{o.id.slice(-4)} • {o.items.length} поз.</p>
-                <p className="text-[9px] text-slate-300 font-bold uppercase">{new Date(o.date).toLocaleDateString()}</p>
+            <div
+                key={o.id}
+                onClick={() => setSelectedOrder(o)}
+                className="bg-white p-5 rounded-[32px] shadow-sm border border-slate-100 flex justify-between items-center active:scale-95 transition-all hover:border-indigo-200"
+            >
+              <div className="flex items-center gap-4 min-w-0 pr-2">
+                <div
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0 ${o.status === 'NEW' ? 'bg-indigo-50 text-indigo-500 animate-pulse' : o.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : o.status === 'CONFIRMED' ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'}`}>
+                  <i className={`fas ${o.status === 'NEW' ? 'fa-bell' : o.status === 'ACCEPTED' ? 'fa-clock' : o.status === 'CONFIRMED' ? 'fa-check' : 'fa-times'}`}></i>
+                </div>
+                <div className="min-w-0">
+                  <p className="font-bold text-slate-800 truncate">{getCustomerName(o)}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Заказ
+                    №{o.id.slice(-4)} • {o.items.length} поз.</p>
+                  <p className="text-[9px] text-slate-300 font-bold uppercase">{new Date(o.date).toLocaleDateString()}</p>
               </div>
             </div>
             <div className="text-right">
