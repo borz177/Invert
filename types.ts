@@ -126,7 +126,7 @@ export interface AppSettings {
   darkMode: boolean;
   isPublic?: boolean; // Виден ли магазин в поиске
   showProductsToClients?: boolean;// Видны ли товары клиентам
-  publicToken: string;
+
 }
 
 export type AppView =
