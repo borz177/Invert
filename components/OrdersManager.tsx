@@ -14,6 +14,10 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
+  // Считаем количество по статусам
+  const newCount = orders.filter(o => o.status === 'NEW').length;
+  const acceptedCount = orders.filter(o => o.status === 'ACCEPTED').length;
+
   const filteredOrders = orders.filter(o => filter === 'ALL' || o.status === filter)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -63,9 +67,20 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all shrink-0 ${filter === f ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100' : 'bg-white text-slate-400 border-slate-100'}`}
+              className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all shrink-0 relative ${filter === f ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100' : 'bg-white text-slate-400 border-slate-100'}`}
             >
               {f === 'ALL' ? 'Все' : f === 'NEW' ? 'Новые' : f === 'ACCEPTED' ? 'Принятые' : f === 'CONFIRMED' ? 'Готовы' : 'Отмена'}
+              {/* Счётчики только для Новых и Принятых */}
+              {f === 'NEW' && newCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-full animate-pulse">
+                  {newCount}
+                </span>
+              )}
+              {f === 'ACCEPTED' && acceptedCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-full">
+                  {acceptedCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -130,6 +145,17 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
                 </div>
               )}
 
+              {/* Способ оплаты — отображаем сразу */}
+              {(selectedOrder.status === 'ACCEPTED' || selectedOrder.status === 'CONFIRMED') && (
+                <div className="bg-indigo-50 p-4 rounded-[32px] border border-indigo-100">
+                  <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1">Способ оплаты</p>
+                  <p className="text-sm font-bold text-indigo-700">
+                    {selectedOrder.paymentMethod === 'CASH' ? 'Наличные' :
+                     selectedOrder.paymentMethod === 'CARD' ? 'Карта' : 'В долг'}
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-3">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Товары в заказе</p>
                 {selectedOrder.items.map((item, idx) => {
@@ -173,12 +199,25 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
                 )}
 
                 {selectedOrder.status === 'ACCEPTED' && (
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all uppercase tracking-widest text-[10px]"
-                  >
-                    Выдать / В продажу
-                  </button>
+                  <>
+                    {/* Кнопка редактирования */}
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      className="flex-1 py-4 font-black text-slate-600 uppercase tracking-widest text-[10px] border border-slate-200 rounded-2xl"
+                    >
+                      Редактировать
+                    </button>
+                    {/* Кнопка выдачи */}
+                    <button
+                      onClick={() => {
+                        onConfirmOrder(selectedOrder);
+                        setSelectedOrder(null);
+                      }}
+                      className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all uppercase tracking-widest text-[10px]"
+                    >
+                      Выдать / В продажу
+                    </button>
+                  </>
                 )}
               </div>
 
@@ -192,7 +231,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
         </div>
       )}
 
-      {/* Модальное окно редактирования и выдачи */}
+      {/* Модальное окно редактирования */}
       {isEditing && selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-end justify-center p-4" onClick={() => setIsEditing(false)}>
           <div className="bg-white w-full max-w-md rounded-t-[40px] p-6 max-h-[85vh] overflow-y-auto animate-slide-up" onClick={e => e.stopPropagation()}>
@@ -268,8 +307,8 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
             {/* Способ оплаты */}
             <div className="mb-6">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Способ оплаты</p>
-              <div className="grid grid-cols-3 gap-2">
-                {(['CASH', 'CARD', 'DEBT'] as const).map(method => (
+              <div className="grid grid-cols-2 gap-2">
+                {(['CASH', 'DEBT'] as const).map(method => (
                   <button
                     key={method}
                     onClick={() => setSelectedOrder({ ...selectedOrder, paymentMethod: method })}
@@ -277,11 +316,11 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
                       selectedOrder.paymentMethod === method
                         ? method === 'DEBT'
                           ? 'bg-red-500 text-white'
-                          : 'bg-indigo-500 text-white'
+                          : 'bg-emerald-500 text-white'
                         : 'bg-slate-100 text-slate-600'
                     }`}
                   >
-                    {method === 'CASH' ? 'Наличные' : method === 'CARD' ? 'Карта' : 'В долг'}
+                    {method === 'CASH' ? 'Оплачено' : 'В долг'}
                   </button>
                 ))}
               </div>
@@ -297,16 +336,12 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
               </button>
               <button
                 onClick={() => {
-                  // Обновляем заказ в списке
                   onUpdateOrder(selectedOrder);
-                  // Подтверждаем продажу
-                  onConfirmOrder(selectedOrder);
                   setIsEditing(false);
-                  setSelectedOrder(null);
                 }}
                 className="flex-1 bg-indigo-600 text-white py-3 rounded-2xl font-black text-[10px] uppercase shadow-lg"
               >
-                Выдать заказ
+                Сохранить
               </button>
             </div>
           </div>
