@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, Product, Sale, Order, AppSettings, CashEntry } from '../types';
 import { db } from '../services/api';
@@ -17,9 +16,10 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const [activeShopId, setActiveShopId] = useState<string | null>(null);
   const [shopList, setShopList] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [productSearch, setProductSearch] = useState(''); // Отдельный поиск для товаров
+  const [productSearch, setProductSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isShopLoading, setIsShopLoading] = useState(false);
 
   const [shopData, setShopData] = useState<{
     products: Product[];
@@ -41,6 +41,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const touchStart = useRef<number>(0);
   const [selectedOpDetail, setSelectedOpDetail] = useState<any | null>(null);
 
+  // Загружаем список магазинов при входе
   useEffect(() => {
     const fetchMyShops = async () => {
       const linked = await db.getData('linkedShops');
@@ -49,7 +50,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     fetchMyShops();
   }, []);
 
-  // Поиск магазинов (только если не выбран магазин)
   useEffect(() => {
     if (activeShopId) return;
     const search = async () => {
@@ -77,33 +77,43 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
       if (onActiveShopChange) onActiveShopChange(null);
       return;
     }
+
     const fetchShopInfo = async () => {
-      const [p, s, o, c, sett, customers] = await Promise.all([
-        db.getDataOfShop(activeShopId, 'products'),
-        db.getDataOfShop(activeShopId, 'sales'),
-        db.getDataOfShop(activeShopId, 'orders'),
-        db.getDataOfShop(activeShopId, 'cashEntries'),
-        db.getDataOfShop(activeShopId, 'settings'),
-        db.getDataOfShop(activeShopId, 'customers')
-      ]);
+      setIsShopLoading(true);
+      try {
+        const [p, s, o, c, sett, customers] = await Promise.all([
+          db.getDataOfShop(activeShopId, 'products'),
+          db.getDataOfShop(activeShopId, 'sales'),
+          db.getDataOfShop(activeShopId, 'orders'),
+          db.getDataOfShop(activeShopId, 'cashEntries'),
+          db.getDataOfShop(activeShopId, 'settings'),
+          db.getDataOfShop(activeShopId, 'customers')
+        ]);
 
-      const meInShop = customers?.find((c: any) =>
-        (c.email?.toLowerCase().trim() === user.email?.toLowerCase().trim() && user.email) ||
-        (c.name?.toLowerCase().trim() === user.name?.toLowerCase().trim())
-      );
+        const meInShop = customers?.find((cust: any) =>
+          (cust.email?.toLowerCase().trim() === user.email?.toLowerCase().trim() && user.email) ||
+          (cust.name?.toLowerCase().trim() === user.name?.toLowerCase().trim()) ||
+          (cust.phone && tempPhone && cust.phone.replace(/\D/g,'') === tempPhone.replace(/\D/g,''))
+        );
 
-      setShopData({
-        products: p || [],
-        sales: s || [],
-        orders: o || [],
-        cashEntries: c || [],
-        settings: sett || {},
-        customerIdInShop: meInShop?.id
-      });
-      if (onActiveShopChange) onActiveShopChange(sett?.shopName || 'Магазин');
+        setShopData({
+          products: p || [],
+          sales: s || [],
+          orders: o || [],
+          cashEntries: c || [],
+          settings: sett || {},
+          customerIdInShop: meInShop?.id
+        });
+
+        if (onActiveShopChange) onActiveShopChange(sett?.shopName || 'Магазин');
+      } catch (err) {
+        console.error("Failed to load shop data", err);
+      } finally {
+        setIsShopLoading(false);
+      }
     };
     fetchShopInfo();
-  }, [activeShopId, user.email, user.name]);
+  }, [activeShopId]);
 
   const addShop = async (shop: any) => {
     if (shopList.some(s => s.id === shop.id)) return;
@@ -141,10 +151,12 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
       !x.isDeleted &&
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
     );
+
     const myPayments = shopData.cashEntries.filter(x =>
       x.type === 'INCOME' &&
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
     );
+
     const myOrders = shopData.orders.filter(x =>
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id) &&
       (x.status === 'NEW' || x.status === 'ACCEPTED' || x.status === 'CANCELLED')
@@ -159,19 +171,41 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
 
   const filteredProducts = useMemo(() => {
     if (!shopData) return [];
+    const search = productSearch.toLowerCase();
     return shopData.products.filter(p =>
-      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      (p.category && p.category.toLowerCase().includes(productSearch.toLowerCase()))
+      p.name.toLowerCase().includes(search) ||
+      (p.category && p.category.toLowerCase().includes(search))
     );
   }, [shopData, productSearch]);
 
   const myStats = useMemo(() => {
     if (!shopData) return { debt: 0, totalPurchased: 0 };
-    const sales = shopData.sales.filter(x => !x.isDeleted && (x.customerId === shopData.customerIdInShop || x.customerId === user.id));
-    const payments = shopData.cashEntries.filter(x => x.type === 'INCOME' && (x.customerId === shopData.customerIdInShop || x.customerId === user.id));
-    const totalPurchased = sales.reduce((acc, i) => acc + i.total, 0);
+
+    const debtSales = shopData.sales.filter(x =>
+      !x.isDeleted &&
+      x.paymentMethod === 'DEBT' &&
+      (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
+    );
+
+    const allSales = shopData.sales.filter(x =>
+      !x.isDeleted &&
+      (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
+    );
+
+    const payments = shopData.cashEntries.filter(x =>
+      x.type === 'INCOME' &&
+      x.category !== 'Продажа' &&
+      (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
+    );
+
+    const totalDebt = debtSales.reduce((acc, i) => acc + i.total, 0);
     const totalPaid = payments.reduce((acc, i) => acc + i.amount, 0);
-    return { debt: Math.max(0, totalPurchased - totalPaid), totalPurchased };
+    const totalPurchased = allSales.reduce((acc, i) => acc + i.total, 0);
+
+    return {
+      debt: Math.max(0, totalDebt - totalPaid),
+      totalPurchased
+    };
   }, [shopData, user.id]);
 
   const cartTotal = useMemo(() => cart.reduce((acc, i) => acc + i.price * i.quantity, 0), [cart]);
@@ -197,6 +231,17 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     alert('Заявка отправлена!');
   };
 
+  // 🔹 Спинер при загрузке конкретного магазина
+  if (activeShopId && isShopLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen animate-fade-in">
+        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-sm font-black text-indigo-600 uppercase tracking-widest">Входим в магазин...</p>
+      </div>
+    );
+  }
+
+  // 🔹 Если выбран магазин и данные загружены — показываем каталог/историю
   if (activeShopId && shopData) {
     return (
       <div className="space-y-6 animate-fade-in pb-32">
@@ -255,12 +300,28 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
               {myHistory.map((op: any) => (
                 <div key={op.id} onClick={() => setSelectedOpDetail(op)} className="p-5 flex justify-between items-center active:bg-slate-50 cursor-pointer">
                   <div className="min-w-0 flex-1 pr-4">
-                    <p className="font-bold text-slate-800 text-sm">
-                      {op.type === 'SALE' ? `Покупка №${op.id.slice(-4)}` : op.type === 'PAYMENT' ? 'Платеж' : 'Заявка'}
-                    </p>
+                    <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                      {op.type === 'SALE' ? (
+                          <>
+                            Покупка №{op.id.slice(-4)}
+                            {op.paymentMethod === 'DEBT' ? (
+                                <span
+                                    className="text-[8px] font-black bg-red-50 text-red-500 px-1.5 py-0.5 rounded uppercase">в долг</span>
+                            ) : (
+                                <span
+                                    className="text-[8px] font-black bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded uppercase">оплачено</span>
+                            )}
+                          </>
+                      ) : op.type === 'PAYMENT' ? (
+                          'Платёж'
+                      ) : (
+                          'Заявка'
+                      )}
+                    </div>
                     <p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p>
                     {op.type === 'ORDER' && (
-                      <span className={`text-[8px] font-black uppercase inline-block px-1.5 py-0.5 rounded mt-1 ${op.status === 'NEW' ? 'bg-indigo-50 text-indigo-500' : op.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-400'}`}>
+                        <span
+                            className={`text-[8px] font-black uppercase inline-block px-1.5 py-0.5 rounded mt-1 ${op.status === 'NEW' ? 'bg-indigo-50 text-indigo-500' : op.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-400'}`}>
                         {op.status === 'NEW' ? 'В обработке' : op.status === 'ACCEPTED' ? 'Принята' : 'Отменена'}
                       </span>
                     )}
@@ -352,6 +413,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     );
   }
 
+  // 🔹 Иначе — показываем список магазинов и поиск
   return (
     <div className="space-y-8 animate-fade-in pb-20">
       <div className="space-y-4">
