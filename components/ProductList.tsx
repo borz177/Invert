@@ -96,7 +96,7 @@ const ProductList: React.FC<ProductListProps> = ({
     let imageToSave: string | undefined = formData.image;
 
     // Если это base64 (начинается с "image"), значит — новый файл
-    if (typeof formData.image === 'string' && formData.image.startsWith('image')) {
+    if (typeof formData.image === 'string' && formData.image.startsWith('data:image/')) {
       const file = fileInputRef.current?.files?.[0];
       if (file) {
         const uploadedUrl = await db.uploadImage(file);
