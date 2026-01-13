@@ -13,7 +13,44 @@ app.use(cors({
   credentials: true
 }));
 
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Путь к папке загрузок
+const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Настройка Multer
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOADS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `img-${uniqueSuffix}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 МБ максимум
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Только изображения!'), false);
+    }
+  }
+});
+
+
 app.use(express.json({ limit: '50mb' }));
+// Раздача загруженных изображений
+app.use('/uploads', express.static(UPLOADS_DIR));
 app.use((req, res, next) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   next();
@@ -175,6 +212,16 @@ app.post('/api/auth/register', async (req, res) => {
     const user = result.rows[0];
     res.status(201).json({ ...user, ownerId: user.role === 'admin' ? user.id : undefined });
   } catch (err) { res.status(err.code === '23505' ? 409 : 500).json({ error: 'Registration error' }); }
+});
+
+
+// Загрузка изображения
+app.post('/api/upload-image', upload.single('image'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Файл не выбран' });
+  }
+  const url = `/uploads/${req.file.filename}`;
+  res.json({ url });
 });
 
 app.listen(PORT, '0.0.0.0', () => { console.log(`🚀 Backend на порту ${PORT}`); });

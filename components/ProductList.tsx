@@ -1,6 +1,6 @@
-
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Product } from '../types';
+import { db } from '../services/api';
 
 interface ProductListProps {
   products: Product[];
@@ -46,12 +46,19 @@ const ProductList: React.FC<ProductListProps> = ({
     type: 'PRODUCT'
   });
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Файл слишком большой! Максимум 5 МБ.');
+        e.target.value = '';
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
-        setFormData({ ...formData, image: reader.result as string });
+        setFormData(prev => ({ ...prev, image: reader.result as string }));
       };
       reader.readAsDataURL(file);
     }
@@ -74,38 +81,60 @@ const ProductList: React.FC<ProductListProps> = ({
     setNewCatName('');
     setBulkText('');
     setShowMoveModal(null);
+    // Сбросить выбор файла
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.name && formData.price !== undefined) {
-      const parseNum = (val: any) => {
-        if (val === '' || val === null || val === undefined) return 0;
-        const n = parseFloat(val);
-        return isNaN(n) ? 0 : n;
-      };
 
-      const finalProduct: Product = {
-        id: editingId || Date.now().toString(),
-        name: formData.name!,
-        sku: formData.sku || `SKU-${Math.floor(Math.random() * 10000)}`,
-        price: parseNum(formData.price),
-        cost: parseNum(formData.cost),
-        quantity: formData.type === 'SERVICE' ? 0 : parseNum(formData.quantity),
-        category: formData.category || categories[0] || 'Другое',
-        minStock: formData.type === 'SERVICE' ? 0 : parseNum(formData.minStock),
-        unit: (formData.unit as any) || 'шт',
-        image: formData.image,
-        type: formData.type || 'PRODUCT'
-      };
-
-      if (editingId) {
-        onUpdate(finalProduct);
-      } else {
-        onAdd(finalProduct);
-      }
-      closeForm();
+    if (!formData.name || formData.price === undefined) {
+      alert('Укажите название и цену');
+      return;
     }
+
+    let imageToSave: string | undefined = formData.image;
+
+    // Если это base64 (начинается с "image"), значит — новый файл
+    if (typeof formData.image === 'string' && formData.image.startsWith('image')) {
+      const file = fileInputRef.current?.files?.[0];
+      if (file) {
+        const uploadedUrl = await db.uploadImage(file);
+        if (uploadedUrl) {
+          imageToSave = uploadedUrl;
+        } else {
+          alert('Не удалось загрузить изображение. Попробуйте ещё раз.');
+          return;
+        }
+      }
+    }
+
+    const parseNum = (val: any) => {
+      if (val === '' || val == null) return 0;
+      const n = parseFloat(val);
+      return isNaN(n) ? 0 : n;
+    };
+
+    const finalProduct: Product = {
+      id: editingId || Date.now().toString(),
+      name: formData.name!,
+      sku: formData.sku || `SKU-${Math.floor(Math.random() * 10000)}`,
+      price: parseNum(formData.price),
+      cost: parseNum(formData.cost),
+      quantity: formData.type === 'SERVICE' ? 0 : parseNum(formData.quantity),
+      category: formData.category || categories[0] || 'Другое',
+      minStock: formData.type === 'SERVICE' ? 0 : parseNum(formData.minStock),
+      unit: (formData.unit as any) || 'шт',
+      image: imageToSave,
+      type: formData.type || 'PRODUCT'
+    };
+
+    if (editingId) {
+      onUpdate(finalProduct);
+    } else {
+      onAdd(finalProduct);
+    }
+    closeForm();
   };
 
   const handleMoveProduct = (newCat: string) => {
@@ -164,8 +193,8 @@ const ProductList: React.FC<ProductListProps> = ({
   );
 
   const activeProducts = selectedCategory
-  ? filteredBySearch.filter(p => p.category === selectedCategory)
-  : filteredBySearch;
+    ? filteredBySearch.filter(p => p.category === selectedCategory)
+    : filteredBySearch;
 
   const productCountPerCategory = products.reduce((acc, p) => {
     acc[p.category] = (acc[p.category] || 0) + 1;
@@ -239,7 +268,7 @@ const ProductList: React.FC<ProductListProps> = ({
               <div className="flex justify-between items-start mb-4 pr-6">
                 <div className="flex gap-4 min-w-0 pr-4">
                   {p.image ? (
-                    <img src={p.image} className="w-16 h-16 rounded-2xl object-cover shrink-0" alt={p.name} />
+                    <img src={p.image.startsWith('http') ? p.image : `${p.image}`} className="w-16 h-16 rounded-2xl object-cover shrink-0" alt={p.name} />
                   ) : (
                     <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 shrink-0">
                       <i className={`fas ${p.type === 'SERVICE' ? 'fa-concierge-bell' : 'fa-image'} text-xl`}></i>
@@ -304,10 +333,10 @@ const ProductList: React.FC<ProductListProps> = ({
 
             <div className="space-y-4">
               <div className="flex bg-slate-100 p-1 rounded-2xl">
-                <button type="button" onClick={() => setFormData({...formData, type: 'PRODUCT'})}
+                <button type="button" onClick={() => setFormData(prev => ({...prev, type: 'PRODUCT'}))}
                         className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${formData.type === 'PRODUCT' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>Товар
                 </button>
-                <button type="button" onClick={() => setFormData({...formData, type: 'SERVICE'})}
+                <button type="button" onClick={() => setFormData(prev => ({...prev, type: 'SERVICE'}))}
                         className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${formData.type === 'SERVICE' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}>Услуга
                 </button>
               </div>
@@ -325,11 +354,18 @@ const ProductList: React.FC<ProductListProps> = ({
                         </>
                     )}
                   </div>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageChange}/>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageChange}
+                  />
                   {formData.image && (
                       <button type="button" onClick={(e) => {
                         e.preventDefault();
-                        setFormData({...formData, image: undefined});
+                        setFormData(prev => ({...prev, image: undefined}));
+                        if (fileInputRef.current) fileInputRef.current.value = '';
                       }}
                               className="absolute -top-2 -right-2 w-8 h-8 bg-white text-red-500 rounded-full shadow-lg flex items-center justify-center border border-slate-100">
                         <i className="fas fa-times"></i></button>
@@ -343,7 +379,7 @@ const ProductList: React.FC<ProductListProps> = ({
                 <input required
                        className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-medium"
                        placeholder={formData.type === 'SERVICE' ? "Напр: Маникюр" : "Напр: Футболка"}
-                       value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})}/>
+                       value={formData.name || ''} onChange={e => setFormData(prev => ({...prev, name: e.target.value}))}/>
               </div>
 
               <div className="space-y-1">
@@ -352,7 +388,7 @@ const ProductList: React.FC<ProductListProps> = ({
                 <textarea
                     className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-medium text-slate-700 h-24 resize-none"
                     placeholder="Добавьте детали, характеристики или состав..." value={formData.description || ''}
-                    onChange={e => setFormData({...formData, description: e.target.value})}/>
+                    onChange={e => setFormData(prev => ({...prev, description: e.target.value}))}/>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -360,7 +396,7 @@ const ProductList: React.FC<ProductListProps> = ({
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Папка</label>
                   <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none"
                           value={formData.category}
-                          onChange={e => setFormData({...formData, category: e.target.value})}>
+                          onChange={e => setFormData(prev => ({...prev, category: e.target.value}))}>
                     {categories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
@@ -368,7 +404,7 @@ const ProductList: React.FC<ProductListProps> = ({
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ед.
                     изм.</label>
                   <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
-                          value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value as any})}>
+                          value={formData.unit} onChange={e => setFormData(prev => ({...prev, unit: e.target.value as any}))}>
                     <option value="шт">шт</option>
                     <option value="кг">кг</option>
                     <option value="упак">упак</option>
@@ -387,7 +423,7 @@ const ProductList: React.FC<ProductListProps> = ({
                       <input type="number" step="0.01" inputMode="decimal"
                              className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
                              value={formData.cost === 0 ? '' : formData.cost}
-                             onChange={e => setFormData({...formData, cost: parseFloat(e.target.value) || 0})}/>
+                             onChange={e => setFormData(prev => ({...prev, cost: parseFloat(e.target.value) || 0}))}/>
                     </div>
                 )}
                 <div className={`${formData.type === 'SERVICE' ? 'col-span-2' : ''} space-y-1`}>
@@ -396,7 +432,7 @@ const ProductList: React.FC<ProductListProps> = ({
                   <input type="number" step="0.01" inputMode="decimal" required
                          className="w-full p-4 bg-indigo-50 border border-indigo-100 rounded-2xl outline-none font-black text-indigo-600"
                          value={formData.price === 0 ? '' : formData.price}
-                         onChange={e => setFormData({...formData, price: parseFloat(e.target.value) || 0})}/>
+                         onChange={e => setFormData(prev => ({...prev, price: parseFloat(e.target.value) || 0}))}/>
                 </div>
               </div>
 
@@ -411,7 +447,7 @@ const ProductList: React.FC<ProductListProps> = ({
                           inputMode="decimal"
                           className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
                           value={formData.quantity === 0 || formData.quantity === null || formData.quantity === undefined ? '' : formData.quantity}
-                          onChange={e => setFormData({...formData, quantity: parseFloat(e.target.value) || 0})}
+                          onChange={e => setFormData(prev => ({...prev, quantity: parseFloat(e.target.value) || 0}))}
                       />
                     </div>
                     <div className="space-y-1">
@@ -420,7 +456,7 @@ const ProductList: React.FC<ProductListProps> = ({
                       <input type="number" inputMode="numeric"
                              className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
                              value={formData.minStock === 0 ? '' : formData.minStock}
-                             onChange={e => setFormData({...formData, minStock: parseFloat(e.target.value) || 0})}/>
+                             onChange={e => setFormData(prev => ({...prev, minStock: parseFloat(e.target.value) || 0}))}/>
                     </div>
                   </div>
               )}
@@ -435,9 +471,8 @@ const ProductList: React.FC<ProductListProps> = ({
         </div>
       )}
 
-      {/* Bulk and Delete modals remain same */}
       {showBulk && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[140] flex items-center justify-center p-4" onClick={closeForm}>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[140] flex items-center justify-center p-4" onClick={closeForm}>
           <form onSubmit={handleBulkSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-w-md space-y-5 animate-fade-in" onClick={e => e.stopPropagation()}>
             <h3 className="text-2xl font-black text-slate-800">Массовый ввод (товары)</h3>
             <p className="text-xs text-slate-400">Формат: Название, Цена, Закуп, Ост</p>

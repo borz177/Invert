@@ -1,9 +1,13 @@
-
 import { Product, Transaction, Sale, CashEntry, Supplier, Customer, Employee, User, AppSettings } from '../types';
 
 const getApiUrl = () => {
   const { protocol, hostname, port } = window.location;
-  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('preview') || hostname.includes('webcontainer')) {
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.includes('preview') ||
+    hostname.includes('webcontainer')
+  ) {
     if (port !== '3001') return `${protocol}//${hostname}:3001/api`;
   }
   return '/api';
@@ -26,6 +30,33 @@ async function fetchWithTimeout(url: string, options: any = {}) {
 }
 
 export const db = {
+  // === НОВЫЙ МЕТОД: ЗАГРУЗКА ИЗОБРАЖЕНИЯ ===
+  async uploadImage(file: File): Promise<string | null> {
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+      const response = await fetchWithTimeout(`${API_BASE}/upload-image`, {
+        method: 'POST',
+        body: formData,
+        // ⚠️ Не устанавливайте Content-Type — браузер сам поставит boundary
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error('Upload failed:', errorText);
+        return null;
+      }
+
+      const data = await response.json();
+      return data.url; // например: "/uploads/img-123456789.jpg"
+    } catch (e) {
+      console.error('Upload exception:', e);
+      return null;
+    }
+  },
+
+  // === AUTH ===
   auth: {
     async register(email: string, password: string, name: string, role: string): Promise<User> {
       const res = await fetchWithTimeout(`${API_BASE}/auth/register`, {
@@ -59,6 +90,7 @@ export const db = {
     }
   },
 
+  // === ADMIN ===
   admin: {
     async getAllUsers(): Promise<User[]> {
       const userJson = localStorage.getItem('currentUser');
@@ -86,6 +118,7 @@ export const db = {
     }
   },
 
+  // === SHOPS ===
   shops: {
     async search(query: string): Promise<any[]> {
       const res = await fetchWithTimeout(`${API_BASE}/shops/search`, {
@@ -98,6 +131,7 @@ export const db = {
     }
   },
 
+  // === DATA ===
   async getData(key: string) {
     const userJson = localStorage.getItem('currentUser');
     if (!userJson) return null;
@@ -127,18 +161,22 @@ export const db = {
       });
       if (!response.ok) return null;
       return await response.json();
-    } catch (e) { return null; }
+    } catch (e) {
+      return null;
+    }
   },
 
   async saveDataOfShop(shopOwnerId: string, key: string, data: any) {
-     try {
+    try {
       await fetchWithTimeout(`${API_BASE}/data/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, data, user_id: shopOwnerId })
       });
       return true;
-    } catch (e) { return false; }
+    } catch (e) {
+      return false;
+    }
   },
 
   async saveData(key: string, data: any) {
@@ -146,7 +184,14 @@ export const db = {
     if (!userJson) return false;
     const user = JSON.parse(userJson);
     const targetUserId = user.ownerId || user.id;
-    localStorage.setItem(`cache_${targetUserId}_${key}`, JSON.stringify(data));
+
+    // ✅ Сохраняем кэш, но не ломаемся при ошибке
+    try {
+      localStorage.setItem(`cache_${targetUserId}_${key}`, JSON.stringify(data));
+    } catch (err) {
+      console.warn('Не удалось сохранить кэш в localStorage', key, err);
+    }
+
     try {
       const response = await fetchWithTimeout(`${API_BASE}/data/save`, {
         method: 'POST',
@@ -154,6 +199,9 @@ export const db = {
         body: JSON.stringify({ key, data, user_id: targetUserId })
       });
       return response.ok;
-    } catch (e) { return false; }
+    } catch (e) {
+      console.error('Ошибка сохранения данных на сервер:', e);
+      return false;
+    }
   }
 };
