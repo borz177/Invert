@@ -268,12 +268,19 @@ const ProductList: React.FC<ProductListProps> = ({
               <div className="flex justify-between items-start mb-4 pr-6">
                 <div className="flex gap-4 min-w-0 pr-4">
                   {p.image ? (
-                    <img src={p.image.startsWith('http') ? p.image : `${p.image}`} className="w-16 h-16 rounded-2xl object-cover shrink-0" alt={p.name} />
-                  ) : (
-                    <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 shrink-0">
-                      <i className={`fas ${p.type === 'SERVICE' ? 'fa-concierge-bell' : 'fa-image'} text-xl`}></i>
-                    </div>
-                  )}
+  <img
+    src={p.image.startsWith('http') ? p.image : `https://babyborz.shop${p.image}`}
+    className="w-16 h-16 rounded-2xl object-cover shrink-0"
+    alt={p.name}
+    onError={(e) => {
+      e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PGNpcmNsZSBjeD0iOCIgY3k9IjgiIHI9IjgiIGZpbGw9IiM5OTkiLz48L3N2Zz4='; // серая иконка
+    }}
+  />
+) : (
+  <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 shrink-0">
+    <i className={`fas ${p.type === 'SERVICE' ? 'fa-concierge-bell' : 'fa-image'} text-xl`}></i>
+  </div>
+)}
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-[9px] font-black text-indigo-400 uppercase bg-indigo-50 px-2 py-0.5 rounded-full inline-block">{p.category}</span>
