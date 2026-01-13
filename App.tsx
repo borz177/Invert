@@ -172,81 +172,89 @@ const App: React.FC = () => {
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, orders]);
 
   const handleConfirmOrder = (order: Order) => {
-    setProducts(prev => {
-      const updated = prev.map(p => {
-        const it = order.items.find(x => x.productId === p.id);
-        return (it && p.type !== 'SERVICE') ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) } : p;
-      });
-      db.saveData('products', updated);
-      return updated;
-    });
+  // 1. Списываем товары
+  setProducts(prev => prev.map(p => {
+    const it = order.items.find(x => x.productId === p.id);
+    return (it && p.type !== 'SERVICE')
+      ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) }
+      : p;
+  }));
 
-    let finalCustomerId = order.customerId;
-    let name = 'Новый клиент';
-    let phone = '';
+  // 2. Обработка клиента (как в предыдущем ответе)
+  let finalCustomerId = order.customerId;
+  let updatedCustomers = [...customers];
 
-    if (order.note && order.note.includes('[Имя:')) {
-      const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
-      const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
-      name = matchName ? matchName[1].trim() : name;
-      phone = matchPhone ? matchPhone[1].trim() : '';
+  if (order.note && order.note.includes('[Имя:')) {
+    const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
+    const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
+    const name = matchName ? matchName[1].trim() : 'Новый клиент';
+    const phone = matchPhone ? matchPhone[1].trim() : '';
+
+    const existing = customers.find(c =>
+      (phone && c.phone === phone) || (c.id === order.customerId)
+    );
+
+    if (!existing) {
+      const newCust: Customer = {
+        id: `CUST-${Date.now()}`,
+        name,
+        phone,
+        debt: 0,
+        discount: 0
+      };
+      updatedCustomers = [newCust, ...customers];
+      finalCustomerId = newCust.id;
+    } else {
+      finalCustomerId = existing.id;
     }
+  }
 
-    setCustomers(prev => {
-      const existing = prev.find(c => c.id === order.customerId || (phone && c.phone === phone));
-      if (!existing) {
-        const newCust: Customer = {
-          id: order.customerId.startsWith('GUEST-') ? `CUST-${Date.now()}` : order.customerId,
-          name,
-          phone,
-          debt: order.paymentMethod === 'DEBT' ? order.total : 0,
-          discount: 0
-        };
-        finalCustomerId = newCust.id;
-        const updated = [newCust, ...prev];
-        db.saveData('customers', updated);
-        return updated;
-      } else {
-        finalCustomerId = existing.id;
-        const updated = prev.map(c => c.id === existing.id ? { ...c, debt: (Number(c.debt) || 0) + (order.paymentMethod === 'DEBT' ? order.total : 0) } : c);
-        db.saveData('customers', updated);
-        return updated;
-      }
-    });
+  // 3. Долг — только если в долг
+  if (order.paymentMethod === 'DEBT' && finalCustomerId) {
+    updatedCustomers = updatedCustomers.map(c =>
+      c.id === finalCustomerId
+        ? { ...c, debt: (Number(c.debt) || 0) + order.total }
+        : c
+    );
+  }
 
-    const newSale: Sale = {
-      id: `SALE-ORD-${order.id}`,
-      employeeId: currentUser?.id || 'admin',
-      items: order.items.map(it => ({ ...it, cost: products.find(p => p.id === it.productId)?.cost || 0 })),
-      total: order.total,
-      paymentMethod: order.paymentMethod || 'DEBT',
-      date: new Date().toISOString(),
-      customerId: finalCustomerId
-    };
-
-    if (order.paymentMethod !== 'DEBT') {
-      const cashEntry: CashEntry = { id: `CS-${Date.now()}`, amount: order.total, type: 'INCOME', category: 'Продажа', description: `Продажа №${newSale.id.slice(-4)}`, date: newSale.date, employeeId: newSale.employeeId };
-      setCashEntries(prev => {
-        const updated = [cashEntry, ...prev];
-        db.saveData('cashEntries', updated);
-        return updated;
-      });
-    }
-
-    setOrders(prev => {
-      const updated: Order[] = prev.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o);
-      db.saveData('orders', updated);
-      return updated;
-    });
-
-    setSales(prev => {
-      const updated = [newSale, ...prev];
-      db.saveData('sales', updated);
-      return updated;
-    });
-
-    alert('Заказ успешно выдан!');
+  // 4. Создаём продажу
+  const newSale: Sale = {
+    id: `SALE-ORD-${order.id}`,
+    employeeId: currentUser?.id || 'admin',
+    items: order.items.map(it => ({
+      ...it,
+      cost: products.find(p => p.id === it.productId)?.cost || 0
+    })),
+    total: order.total,
+    paymentMethod: order.paymentMethod || 'DEBT',
+    date: new Date().toISOString(),
+    customerId: finalCustomerId
   };
+
+  // 5. Добавляем запись в кассу, если ОПЛАЧЕНО
+  if (order.paymentMethod !== 'DEBT') {
+    const cashEntry: CashEntry = {
+      id: `CS-${Date.now()}`,
+      amount: order.total,
+      type: 'INCOME',
+      category: 'Продажа',
+      description: `Продажа №${newSale.id.slice(-4)}`,
+      date: newSale.date,
+      employeeId: newSale.employeeId
+    };
+    setCashEntries(prev => [cashEntry, ...prev]);
+  }
+
+  // 6. Обновляем состояние
+  setOrders(prev => prev.map(o =>
+    o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o
+  ));
+  setCustomers(updatedCustomers);
+  setSales(prev => [newSale, ...prev]);
+
+  alert('Заказ выдан!');
+};
 
   const renderView = () => {
     if (!currentUser) return null;
