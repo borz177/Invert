@@ -180,13 +180,36 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   }, [shopData, productSearch]);
 
   const myStats = useMemo(() => {
-    if (!shopData) return { debt: 0, totalPurchased: 0 };
-    const sales = shopData.sales.filter(x => !x.isDeleted && (x.customerId === shopData.customerIdInShop || x.customerId === user.id));
-    const payments = shopData.cashEntries.filter(x => x.type === 'INCOME' && (x.customerId === shopData.customerIdInShop || x.customerId === user.id));
-    const totalPurchased = sales.reduce((acc, i) => acc + i.total, 0);
-    const totalPaid = payments.reduce((acc, i) => acc + i.amount, 0);
-    return { debt: Math.max(0, totalPurchased - totalPaid), totalPurchased };
-  }, [shopData, user.id]);
+  if (!shopData) return { debt: 0, totalPurchased: 0 };
+
+  // Только продажи В ДОЛГ
+  const debtSales = shopData.sales.filter(x =>
+    !x.isDeleted &&
+    x.paymentMethod === 'DEBT' && // ← КЛЮЧЕВОЕ УСЛОВИЕ
+    (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
+  );
+
+  // Все продажи (для статистики "закупок на сумму")
+  const allSales = shopData.sales.filter(x =>
+    !x.isDeleted &&
+    (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
+  );
+
+  const payments = shopData.cashEntries.filter(x =>
+    x.type === 'INCOME' &&
+    x.category !== 'Продажа' && // ← только реальные платежи, не автоматические записи от продаж
+    (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
+  );
+
+  const totalDebt = debtSales.reduce((acc, i) => acc + i.total, 0);
+  const totalPaid = payments.reduce((acc, i) => acc + i.amount, 0);
+  const totalPurchased = allSales.reduce((acc, i) => acc + i.total, 0);
+
+  return {
+    debt: Math.max(0, totalDebt - totalPaid),
+    totalPurchased
+  };
+}, [shopData, user.id]);
 
   const cartTotal = useMemo(() => cart.reduce((acc, i) => acc + i.price * i.quantity, 0), [cart]);
 

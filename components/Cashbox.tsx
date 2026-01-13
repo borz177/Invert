@@ -21,24 +21,42 @@ const Cashbox: React.FC<CashboxProps> = ({ entries, customers, suppliers, onAdd 
   const total = entries.reduce((acc, e) => acc + (e.type === 'INCOME' ? e.amount : -e.amount), 0);
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (formData.amount) {
-      let finalCategory = formData.category || 'Общее';
-      if (isClientPayment) finalCategory = 'Оплата от клиента';
-      if (isSupplierPayment) finalCategory = 'Оплата поставщику';
+  e.preventDefault();
 
-      onAdd({
-        ...formData as CashEntry,
-        id: Date.now().toString(),
-        date: new Date().toISOString(),
-        category: finalCategory
-      });
-      setShowForm(false);
-      setIsClientPayment(false);
-      setIsSupplierPayment(false);
-      setFormData({ type: 'EXPENSE', category: 'Хозрасходы' });
-    }
-  };
+  if (!formData.amount || formData.amount <= 0) {
+    alert('Укажите корректную сумму');
+    return;
+  }
+
+  // 🔹 Проверка: если выбран "От клиента", но клиент не выбран
+  if (isClientPayment && !formData.customerId) {
+    alert('Выберите клиента');
+    return;
+  }
+
+  // 🔹 Проверка: если выбран "Поставщику", но поставщик не выбран
+  if (isSupplierPayment && !formData.supplierId) {
+    alert('Выберите поставщика');
+    return;
+  }
+
+  let finalCategory = formData.category || 'Общее';
+  if (isClientPayment) finalCategory = 'Оплата от клиента';
+  if (isSupplierPayment) finalCategory = 'Оплата поставщику';
+
+  onAdd({
+    ...formData as CashEntry,
+    id: Date.now().toString(),
+    date: new Date().toISOString(),
+    category: finalCategory
+  });
+
+  // Сброс
+  setShowForm(false);
+  setIsClientPayment(false);
+  setIsSupplierPayment(false);
+  setFormData({ type: 'EXPENSE', category: 'Хозрасходы' });
+};
 
   return (
     <div className="space-y-6">
