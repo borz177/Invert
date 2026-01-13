@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, Transaction, Sale, CashEntry, AppView, Supplier, Customer, Employee, AppSettings, User, Order } from './types';
 import { NAV_ITEMS, QUICK_ACTIONS, INITIAL_CATEGORIES } from './constants';
@@ -76,11 +77,11 @@ const App: React.FC = () => {
     if (!silent) setIsLoading(true);
     setSyncStatus('SYNCING');
     try {
-      const [p, t, s, c, sup, cust, emp, cats, sett, cart, batch, ords] = await Promise.all([
+      const [p, t, s, c, sup, cust, emp, cats, sett, ords] = await Promise.all([
         db.getData('products'), db.getData('transactions'), db.getData('sales'),
         db.getData('cashEntries'), db.getData('suppliers'), db.getData('customers'),
         db.getData('employees'), db.getData('categories'), db.getData('settings'),
-        db.getData('posCart'), db.getData('warehouseBatch'), db.getData('orders')
+        db.getData('orders')
       ]);
       if (Array.isArray(p)) setProducts(p);
       if (Array.isArray(t)) setTransactions(t);
@@ -111,6 +112,15 @@ const App: React.FC = () => {
 
   useEffect(() => { if (isAuthenticated) fetchAllData(); }, [isAuthenticated, currentUser?.ownerId]);
 
+  // Фоновое обновление данных каждые 30 секунд
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const interval = setInterval(() => {
+      fetchAllData(true); // Silent refresh
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, currentUser?.ownerId]);
+
   useEffect(() => {
     if (!isDataLoaded.current || isLoading || !isAuthenticated) return;
     const timer = setTimeout(() => {
@@ -129,7 +139,6 @@ const App: React.FC = () => {
   const handleAddCashEntry = (entry: CashEntry) => {
     setCashEntries([entry, ...cashEntries]);
 
-    // Уменьшаем долг клиента ТОЛЬКО если это НЕ автоматическая запись от продажи
     if (entry.type === 'INCOME' && entry.customerId && entry.category !== 'Продажа') {
       setCustomers(prev => prev.map(c =>
         c.id === entry.customerId
@@ -191,7 +200,6 @@ const App: React.FC = () => {
     alert('Заказ выдан! Сформирована продажа и обновлен долг клиента.');
   };
 
-  // 🔥 НОВАЯ ФУНКЦИЯ: корректное удаление продажи
   const handleDeleteSale = (saleId: string) => {
     const sale = sales.find(s => s.id === saleId);
     if (!sale || sale.isDeleted) return;
@@ -200,7 +208,6 @@ const App: React.FC = () => {
       return;
     }
 
-    // 1. Возврат товаров на склад
     const updatedProducts = products.map(p => {
       const item = sale.items.find(i => i.productId === p.id);
       if (item && p.type !== 'SERVICE') {
@@ -209,7 +216,6 @@ const App: React.FC = () => {
       return p;
     });
 
-    // 2. Коррекция долга (только для продаж в долг)
     let updatedCustomers = [...customers];
     if (sale.paymentMethod === 'DEBT' && sale.customerId) {
       updatedCustomers = customers.map(c =>
@@ -219,7 +225,6 @@ const App: React.FC = () => {
       );
     }
 
-    // 3. Удаление связанной кассовой записи (если есть)
     const relatedCashEntry = cashEntries.find(
       ce => ce.description?.includes(saleId.slice(-4)) && ce.category === 'Продажа'
     );
@@ -228,12 +233,10 @@ const App: React.FC = () => {
       updatedCashEntries = cashEntries.filter(ce => ce.id !== relatedCashEntry.id);
     }
 
-    // 4. Помечаем как удалённую
     const updatedSales = sales.map(s =>
       s.id === saleId ? { ...s, isDeleted: true } : s
     );
 
-    // 5. Обновляем всё состояние
     setProducts(updatedProducts);
     setCustomers(updatedCustomers);
     setCashEntries(updatedCashEntries);
@@ -254,7 +257,68 @@ const App: React.FC = () => {
 
     switch (view) {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={setView} orderCount={orders.filter(o => o.status === 'NEW').length}/>;
-      case 'PRODUCTS': return <ProductList products={products} categories={categories} canEdit={true} canCreate={true} canDelete={true} showCost={true} onAdd={p => setProducts([p, ...products])} onAddBulk={ps => setProducts([...ps, ...products])} onUpdate={p => setProducts(products.map(x => x.id === p.id ? p : x))} onDelete={id => setProducts(products.filter(x => x.id !== id))} onAddCategory={c => setCategories([...categories, c])} onRenameCategory={(o, n) => { setCategories(categories.map(c => c === o ? n : c)); setProducts(products.map(p => p.category === o ? { ...p, category: n } : p)); }} onDeleteCategory={c => { setCategories(categories.filter(x => x !== c)); setProducts(products.map(p => p.category === c ? { ...p, category: 'Другое' } : p)); }}/>;
+      case 'PRODUCTS': return <ProductList
+  products={products}
+  categories={categories}
+  canEdit={true}
+  canCreate={true}
+  canDelete={true}
+  showCost={true}
+  onAdd={async (p) => {
+    const updated = [p, ...products];
+    setProducts(updated);
+    await db.saveData('products', updated);
+  }}
+  onAddBulk={async (ps) => {
+    const updated = [...ps, ...products];
+    setProducts(updated);
+    await db.saveData('products', updated);
+  }}
+  onUpdate={async (p) => {
+    const updated = products.map(x => x.id === p.id ? p : x);
+    setProducts(updated);
+    await db.saveData('products', updated);
+  }}
+  onDelete={async (id) => {
+    const updated = products.filter(x => x.id !== id);
+    setProducts(updated);
+    await db.saveData('products', updated);
+  }}
+  onAddCategory={async (c) => {
+    const updated = [...categories, c];
+    setCategories(updated);
+    await db.saveData('categories', updated);
+  }}
+  onRenameCategory={async (o, n) => {
+    const updatedCats = categories.map(cat => cat === o ? n : cat);
+    const updatedProds = products.map(p => p.category === o ? { ...p, category: n } : p);
+    setCategories(updatedCats);
+    setProducts(updatedProds);
+    await Promise.all([
+      db.saveData('categories', updatedCats),
+      db.saveData('products', updatedProds)
+    ]);
+  }}
+  onDeleteCategory={async (c) => {
+    // 1. Удаляем категорию из списка
+    const updatedCats = categories.filter(cat => cat !== c);
+
+    // 2. Меняем категорию у всех товаров на "Другое"
+    const updatedProds = products.map(p =>
+      p.category === c ? { ...p, category: 'Другое' } : p
+    );
+
+    // 3. Обновляем состояние
+    setCategories(updatedCats);
+    setProducts(updatedProds);
+
+    // 4. Сохраняем ОБА массива в БД
+    await Promise.all([
+      db.saveData('categories', updatedCats),
+      db.saveData('products', updatedProds)
+    ]);
+  }}
+/>;
       case 'WAREHOUSE': return <Warehouse products={products} suppliers={suppliers} transactions={transactions} batch={warehouseBatch} setBatch={setWarehouseBatch} onTransaction={t => setTransactions([t, ...transactions])} onTransactionsBulk={ts => setTransactions([...ts, ...transactions])} onAddCashEntry={handleAddCashEntry}/>;
       case 'SALES': return <POS 
         products={products} 
@@ -262,8 +326,8 @@ const App: React.FC = () => {
         cart={posCart} 
         setCart={setPosCart} 
         currentUserId={currentUser?.id} 
+        settings={settings}
         onSale={s => {
-          // 🔥 ИСПРАВЛЕНО: СПИСАНИЕ ТОВАРОВ СО СКЛАДА
           const updatedProducts = products.map(p => {
             const itemInSale = s.items.find(it => it.productId === p.id);
             if (itemInSale && p.type !== 'SERVICE') {
@@ -272,13 +336,9 @@ const App: React.FC = () => {
             return p;
           });
 
-          // Сохраняем продажу
           setSales([s, ...sales]);
-          
-          // Обновляем склад
           setProducts(updatedProducts);
 
-          // Обновляем долг (если в долг)
           if (s.paymentMethod === 'DEBT' && s.customerId) {
             setCustomers(prev => prev.map(c =>
               c.id === s.customerId
@@ -287,7 +347,6 @@ const App: React.FC = () => {
             ));
           }
 
-          // Создаём кассовую запись (без customerId!)
           if (s.paymentMethod !== 'DEBT') {
             handleAddCashEntry({
               id: `S-${Date.now()}`,
@@ -297,7 +356,6 @@ const App: React.FC = () => {
               description: `Продажа №${s.id.slice(-4)}`,
               date: s.date,
               employeeId: s.employeeId
-              // ⚠️ НЕ передаём customerId!
             });
           }
         }} 
@@ -313,16 +371,13 @@ const App: React.FC = () => {
         products={products} 
         employees={employees} 
         customers={customers} 
+        settings={settings}
         onUpdateTransaction={()=>{}} 
         onDeleteTransaction={(id)=>setTransactions(transactions.filter(t=>t.id!==id))} 
-        onDeleteSale={handleDeleteSale} // 🔥 ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ
+        onDeleteSale={handleDeleteSale} 
         onDeleteCashEntry={(id)=>setCashEntries(cashEntries.filter(c=>c.id!==id))} 
         onUpdateSale={(updatedSale) => {
-          // Обновление продажи (например, изменение цены)
           setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s));
-          // 💡 Для полной корректности нужно также обновить склад и долг,
-          // но это сложнее — требует сравнения старых и новых значений.
-          // В рамках текущей задачи оставим как есть.
         }} 
         canDelete={isAdmin}
       />;
