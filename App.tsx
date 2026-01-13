@@ -300,26 +300,43 @@ const App: React.FC = () => {
     ]);
   }}
   onDeleteCategory={async (c) => {
-    // 1. Удаляем категорию из списка
     const updatedCats = categories.filter(cat => cat !== c);
-
-    // 2. Меняем категорию у всех товаров на "Другое"
     const updatedProds = products.map(p =>
       p.category === c ? { ...p, category: 'Другое' } : p
     );
-
-    // 3. Обновляем состояние
     setCategories(updatedCats);
     setProducts(updatedProds);
-
-    // 4. Сохраняем ОБА массива в БД
     await Promise.all([
       db.saveData('categories', updatedCats),
       db.saveData('products', updatedProds)
     ]);
   }}
 />;
-      case 'WAREHOUSE': return <Warehouse products={products} suppliers={suppliers} transactions={transactions} batch={warehouseBatch} setBatch={setWarehouseBatch} onTransaction={t => setTransactions([t, ...transactions])} onTransactionsBulk={ts => setTransactions([...ts, ...transactions])} onAddCashEntry={handleAddCashEntry}/>;
+      case 'WAREHOUSE': return <Warehouse
+        products={products}
+        suppliers={suppliers}
+        transactions={transactions}
+        categories={categories}
+        batch={warehouseBatch}
+        setBatch={setWarehouseBatch}
+        onTransaction={t => setTransactions([t, ...transactions])}
+        onTransactionsBulk={ts => {
+           // Обновление остатков при приходе
+           const updatedProducts = products.map(p => {
+             const items = ts.filter(t => t.productId === p.id);
+             const addedQty = items.reduce((acc, curr) => acc + curr.quantity, 0);
+             return addedQty > 0 ? { ...p, quantity: p.quantity + addedQty } : p;
+           });
+           setProducts(updatedProducts);
+           setTransactions([...ts, ...transactions]);
+        }}
+        onAddCashEntry={handleAddCashEntry}
+        onAddProduct={async (p) => {
+          const updated = [p, ...products];
+          setProducts(updated);
+          await db.saveData('products', updated);
+        }}
+      />;
       case 'SALES': return <POS 
         products={products} 
         customers={customers} 
