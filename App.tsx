@@ -170,7 +170,6 @@ const App: React.FC = () => {
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, orders]);
 
   const handleConfirmOrder = (order: Order) => {
-    // 1. Списание товаров
     setProducts(prev => {
       const updated = prev.map(p => {
         const it = order.items.find(x => x.productId === p.id);
@@ -180,53 +179,36 @@ const App: React.FC = () => {
       return updated;
     });
 
-    // 2. Логика сохранения клиента (постоянного или гостя) в базу продавца
-let finalCustomerId = order.customerId;
-let name = 'Новый клиент';
-let phone = '';
+    let finalCustomerId = order.customerId;
+    if (order.note && order.note.includes('[Имя:')) {
+      const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
+      const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
+      const name = matchName ? matchName[1].trim() : 'Новый клиент';
+      const phone = matchPhone ? matchPhone[1].trim() : '';
 
-// Извлекаем данные из примечания, если есть
-if (order.note && order.note.includes('[Имя:')) {
-  const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
-  const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
-  name = matchName ? matchName[1].trim() : name;
-  phone = matchPhone ? matchPhone[1].trim() : '';
-}
+      setCustomers(prev => {
+        const existing = prev.find(c => (phone && c.phone === phone) || (c.id === order.customerId));
+        if (!existing) {
+          const newCust: Customer = { id: `CUST-${Date.now()}`, name, phone, debt: order.paymentMethod === 'DEBT' ? order.total : 0, discount: 0 };
+          finalCustomerId = newCust.id;
+          const updated = [newCust, ...prev];
+          db.saveData('customers', updated);
+          return updated;
+        } else {
+          finalCustomerId = existing.id;
+          const updated = prev.map(c => c.id === existing.id ? { ...c, debt: (Number(c.debt) || 0) + (order.paymentMethod === 'DEBT' ? order.total : 0) } : c);
+          db.saveData('customers', updated);
+          return updated;
+        }
+      });
+    } else if (order.paymentMethod === 'DEBT') {
+      setCustomers(prev => {
+        const updated = prev.map(c => c.id === order.customerId ? { ...c, debt: (Number(c.debt) || 0) + order.total } : c);
+        db.saveData('customers', updated);
+        return updated;
+      });
+    }
 
-setCustomers(prev => {
-  // Ищем клиента по ID или телефону
-  const existing = prev.find(c =>
-    c.id === order.customerId ||
-    (phone && c.phone === phone)
-  );
-
-  if (!existing) {
-    // Создаём нового клиента
-    const newCust: Customer = {
-      id: order.customerId.startsWith('GUEST-') ? `CUST-${Date.now()}` : order.customerId,
-      name,
-      phone,
-      debt: order.paymentMethod === 'DEBT' ? order.total : 0,
-      discount: 0
-    };
-    finalCustomerId = newCust.id;
-    const updated = [newCust, ...prev];
-    db.saveData('customers', updated);
-    return updated;
-  } else {
-    // Обновляем долг существующего клиента
-    finalCustomerId = existing.id;
-    const updated = prev.map(c =>
-      c.id === existing.id
-        ? { ...c, debt: (Number(c.debt) || 0) + (order.paymentMethod === 'DEBT' ? order.total : 0) }
-        : c
-    );
-    db.saveData('customers', updated);
-    return updated;
-  }
-});
-
-    // 3. Создание продажи
     const newSale: Sale = {
       id: `SALE-ORD-${order.id}`,
       employeeId: currentUser?.id || 'admin',
@@ -237,7 +219,6 @@ setCustomers(prev => {
       customerId: finalCustomerId
     };
 
-    // 4. Запись в кассу если оплачено сразу
     if (order.paymentMethod !== 'DEBT') {
       const cashEntry: CashEntry = { id: `CS-${Date.now()}`, amount: order.total, type: 'INCOME', category: 'Продажа', description: `Продажа №${newSale.id.slice(-4)}`, date: newSale.date, employeeId: newSale.employeeId };
       setCashEntries(prev => {
@@ -247,20 +228,17 @@ setCustomers(prev => {
       });
     }
 
-    // 5. Обновление статуса заказа
     setOrders(prev => {
       const updated: Order[] = prev.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o);
       db.saveData('orders', updated);
       return updated;
     });
-
     setSales(prev => {
       const updated = [newSale, ...prev];
       db.saveData('sales', updated);
       return updated;
     });
-
-    alert('Заказ успешно выдан!');
+    alert('Заказ выдан!');
   };
 
   const renderView = () => {
@@ -284,9 +262,9 @@ setCustomers(prev => {
       case 'CLIENTS': return <Clients customers={customers} sales={sales} cashEntries={cashEntries} onAdd={c => setCustomers(prev => [c, ...prev])} onUpdate={c => setCustomers(prev => prev.map(x => x.id === c.id ? c : x))} onDelete={id => setCustomers(prev => prev.filter(x => x.id !== id))}/>;
       case 'SUPPLIERS': return <Suppliers suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products} onAdd={s => setSuppliers(prev => [s, ...prev])} onUpdate={s => setSuppliers(prev => prev.map(x => x.id === s.id ? s : x))} onDelete={id => setSuppliers(prev => prev.filter(x => x.id !== id))}/>;
       case 'EMPLOYEES': return <Employees employees={employees} sales={sales} onAdd={e => setEmployees(prev => [e, ...prev])} onUpdate={e => setEmployees(prev => prev.map(x => x.id === e.id ? e : x))} onDelete={id => setEmployees(prev => prev.filter(x => x.id !== id))}/>;
-      case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={o => setOrders(prev => { const updated = prev.map(x => x.id === o.id ? o : x); db.saveData('orders', updated); return updated; })} onConfirmOrder={handleConfirmOrder}/>;
-      case 'ALL_OPERATIONS': return <AllOperations sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees} customers={customers} settings={settings} onUpdateTransaction={()=>{}} onDeleteTransaction={(id)=>setTransactions(prev => { const updated = prev.filter(t=>t.id!==id); db.saveData('transactions', updated); return updated; })} onDeleteSale={(id)=>setSales(prev => { const updated = prev.map(s => s.id===id ? {...s, isDeleted:true} : s); db.saveData('sales', updated); return updated; })} onDeleteCashEntry={(id)=>setCashEntries(prev => { const updated = prev.filter(c=>c.id!==id); db.saveData('cashEntries', updated); return updated; })} onUpdateSale={(updatedSale) => { setSales(prev => { const updated = prev.map(s => s.id === updatedSale.id ? updatedSale : s); db.saveData('sales', updated); return updated; }); }} canDelete={isAdmin} />;
-      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={e => setCashEntries(prev => { const updated = [e, ...prev]; db.saveData('cashEntries', updated); return updated; })}/>;
+      case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={o => setOrders(prev => prev.map(x => x.id === o.id ? o : x))} onConfirmOrder={handleConfirmOrder}/>;
+      case 'ALL_OPERATIONS': return <AllOperations sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees} customers={customers} settings={settings} onUpdateTransaction={()=>{}} onDeleteTransaction={(id)=>setTransactions(prev => prev.filter(t=>t.id!==id))} onDeleteSale={(id)=>setSales(prev => prev.map(s => s.id===id ? {...s, isDeleted:true} : s))} onDeleteCashEntry={(id)=>setCashEntries(prev => prev.filter(c=>c.id!==id))} onUpdateSale={(updatedSale) => { setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s)); }} canDelete={isAdmin} />;
+      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={e => setCashEntries(prev => [e, ...prev])}/>;
       case 'REPORTS': return <Reports sales={sales} transactions={transactions} products={products}/>;
       case 'PRICE_LIST': return <PriceList products={products} showCost={isAdmin}/>;
       case 'STOCK_REPORT': return <StockReport products={products}/>;
