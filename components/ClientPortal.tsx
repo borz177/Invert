@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, Product, Sale, Order, AppSettings, CashEntry } from '../types';
 import { db } from '../services/api';
@@ -10,10 +11,11 @@ interface ClientPortalProps {
   onAddOrder: (order: Order) => void;
   onUpdateOrder?: (order: Order) => void;
   onActiveShopChange?: (name: string | null) => void;
+  initialShopId?: string | null;
 }
 
-const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateOrder, onActiveShopChange }) => {
-  const [activeShopId, setActiveShopId] = useState<string | null>(null);
+const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateOrder, onActiveShopChange, initialShopId }) => {
+  const [activeShopId, setActiveShopId] = useState<string | null>(initialShopId || null);
   const [shopList, setShopList] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [productSearch, setProductSearch] = useState('');
@@ -34,21 +36,22 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const [cart, setCart] = useState<any[]>([]);
   const [isOrdering, setIsOrdering] = useState(false);
   const [note, setNote] = useState('');
-  const [tempName, setTempName] = useState(user.name || '');
+  const [tempName, setTempName] = useState(user.name === 'Гость' ? '' : user.name);
   const [tempPhone, setTempPhone] = useState('');
 
   const [swipeId, setSwipeId] = useState<string | null>(null);
   const touchStart = useRef<number>(0);
   const [selectedOpDetail, setSelectedOpDetail] = useState<any | null>(null);
 
-  // Загружаем список магазинов при входе
   useEffect(() => {
-    const fetchMyShops = async () => {
-      const linked = await db.getData('linkedShops');
-      if (Array.isArray(linked)) setShopList(linked);
-    };
-    fetchMyShops();
-  }, []);
+    if (!initialShopId) {
+      const fetchMyShops = async () => {
+        const linked = await db.getData('linkedShops');
+        if (Array.isArray(linked)) setShopList(linked);
+      };
+      fetchMyShops();
+    }
+  }, [initialShopId]);
 
   useEffect(() => {
     if (activeShopId) return;
@@ -92,7 +95,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
 
         const meInShop = customers?.find((cust: any) =>
           (cust.email?.toLowerCase().trim() === user.email?.toLowerCase().trim() && user.email) ||
-          (cust.name?.toLowerCase().trim() === user.name?.toLowerCase().trim()) ||
+          (cust.name?.toLowerCase().trim() === user.name?.toLowerCase().trim() && user.name !== 'Гость') ||
           (cust.phone && tempPhone && cust.phone.replace(/\D/g,'') === tempPhone.replace(/\D/g,''))
         );
 
@@ -113,7 +116,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
       }
     };
     fetchShopInfo();
-  }, [activeShopId]);
+  }, [activeShopId, user.id]);
 
   const addShop = async (shop: any) => {
     if (shopList.some(s => s.id === shop.id)) return;
@@ -146,6 +149,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
 
   const myHistory = useMemo(() => {
     if (!shopData) return [];
+    if (user.name === 'Гость' && !shopData.customerIdInShop) return [];
 
     const mySales = shopData.sales.filter(x =>
       !x.isDeleted &&
@@ -180,6 +184,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
 
   const myStats = useMemo(() => {
     if (!shopData) return { debt: 0, totalPurchased: 0 };
+    if (user.name === 'Гость' && !shopData.customerIdInShop) return { debt: 0, totalPurchased: 0 };
 
     const debtSales = shopData.sales.filter(x =>
       !x.isDeleted &&
@@ -213,7 +218,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const handleSendOrder = () => {
     if (cart.length === 0 || !activeShopId) return;
     if (!shopData?.customerIdInShop && (!tempName.trim() || !tempPhone.trim())) {
-      alert('Пожалуйста, укажите ваше имя и телефон');
+      alert('Пожалуйста, укажите ваше имя и телефон для связи');
       return;
     }
     const newOrder: Order = {
@@ -228,10 +233,9 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     db.saveDataOfShop(activeShopId, 'orders', [newOrder, ...(shopData?.orders || [])]);
     setCart([]);
     setIsOrdering(false);
-    alert('Заявка отправлена!');
+    alert('Заявка отправлена! Менеджер свяжется с вами.');
   };
 
-  // 🔹 Спинер при загрузке конкретного магазина
   if (activeShopId && isShopLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-screen animate-fade-in">
@@ -241,7 +245,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     );
   }
 
-  // 🔹 Если выбран магазин и данные загружены — показываем каталог/историю
   if (activeShopId && shopData) {
     return (
       <div className="space-y-6 animate-fade-in pb-32">
@@ -291,51 +294,60 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
           </div>
         ) : (
           <div className="space-y-6 animate-fade-in">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-red-50 p-6 rounded-[32px] border border-red-100 text-center"><p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Долг</p><p className="text-2xl font-black text-red-600">{myStats.debt.toLocaleString()} ₽</p></div>
-              <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 text-center"><p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Закупок на сумму</p><p className="text-2xl font-black text-indigo-600">{myStats.totalPurchased.toLocaleString()} ₽</p></div>
-            </div>
-            <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-50">
-              <p className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50">Ваши операции</p>
-              {myHistory.map((op: any) => (
-                <div key={op.id} onClick={() => setSelectedOpDetail(op)} className="p-5 flex justify-between items-center active:bg-slate-50 cursor-pointer">
-                  <div className="min-w-0 flex-1 pr-4">
-                    <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                      {op.type === 'SALE' ? (
-                          <>
-                            Покупка №{op.id.slice(-4)}
-                            {op.paymentMethod === 'DEBT' ? (
-                                <span
-                                    className="text-[8px] font-black bg-red-50 text-red-500 px-1.5 py-0.5 rounded uppercase">в долг</span>
-                            ) : (
-                                <span
-                                    className="text-[8px] font-black bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded uppercase">оплачено</span>
-                            )}
-                          </>
-                      ) : op.type === 'PAYMENT' ? (
-                          'Платёж'
-                      ) : (
-                          'Заявка'
-                      )}
-                    </div>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p>
-                    {op.type === 'ORDER' && (
-                        <span
-                            className={`text-[8px] font-black uppercase inline-block px-1.5 py-0.5 rounded mt-1 ${op.status === 'NEW' ? 'bg-indigo-50 text-indigo-500' : op.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-400'}`}>
-                        {op.status === 'NEW' ? 'В обработке' : op.status === 'ACCEPTED' ? 'Принята' : 'Отменена'}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <p className={`font-black text-lg ${op.type === 'PAYMENT' ? 'text-emerald-500' : 'text-slate-800'}`}>
-                      {op.type === 'PAYMENT' ? '-' : ''}{(op.amount || op.total).toLocaleString()} ₽
-                    </p>
-                    <i className="fas fa-chevron-right text-[10px] text-slate-200"></i>
-                  </div>
+            {user.name !== 'Гость' || shopData.customerIdInShop ? (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-red-50 p-6 rounded-[32px] border border-red-100 text-center"><p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Долг</p><p className="text-2xl font-black text-red-600">{myStats.debt.toLocaleString()} ₽</p></div>
+                  <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 text-center"><p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Закупок на сумму</p><p className="text-2xl font-black text-indigo-600">{myStats.totalPurchased.toLocaleString()} ₽</p></div>
                 </div>
-              ))}
-              {myHistory.length === 0 && <p className="text-center py-20 text-slate-300 italic">Событий нет</p>}
-            </div>
+                <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-50">
+                  <p className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50">Ваши операции</p>
+                  {myHistory.map((op: any) => (
+                    <div key={op.id} onClick={() => setSelectedOpDetail(op)} className="p-5 flex justify-between items-center active:bg-slate-50 cursor-pointer">
+                      <div className="min-w-0 flex-1 pr-4">
+                        <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                          {op.type === 'SALE' ? (
+                              <>
+                                Покупка №{op.id.slice(-4)}
+                                {op.paymentMethod === 'DEBT' ? (
+                                    <span
+                                        className="text-[8px] font-black bg-red-50 text-red-500 px-1.5 py-0.5 rounded uppercase">в долг</span>
+                                ) : (
+                                    <span
+                                        className="text-[8px] font-black bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded uppercase">оплачено</span>
+                                )}
+                              </>
+                          ) : op.type === 'PAYMENT' ? (
+                              'Платёж'
+                          ) : (
+                              'Заявка'
+                          )}
+                        </div>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p>
+                        {op.type === 'ORDER' && (
+                            <span
+                                className={`text-[8px] font-black uppercase inline-block px-1.5 py-0.5 rounded mt-1 ${op.status === 'NEW' ? 'bg-indigo-50 text-indigo-500' : op.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-400'}`}>
+                            {op.status === 'NEW' ? 'В обработке' : op.status === 'ACCEPTED' ? 'Принята' : 'Отменена'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <p className={`font-black text-lg ${op.type === 'PAYMENT' ? 'text-emerald-500' : 'text-slate-800'}`}>
+                          {op.type === 'PAYMENT' ? '-' : ''}{(op.amount || op.total).toLocaleString()} ₽
+                        </p>
+                        <i className="fas fa-chevron-right text-[10px] text-slate-200"></i>
+                      </div>
+                    </div>
+                  ))}
+                  {myHistory.length === 0 && <p className="text-center py-20 text-slate-300 italic">Событий нет</p>}
+                </div>
+              </>
+            ) : (
+              <div className="py-20 text-center space-y-4">
+                <i className="fas fa-history text-4xl text-slate-100"></i>
+                <p className="text-slate-400 text-sm font-medium">История доступна только после <br/> авторизации в системе</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -391,8 +403,8 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
               {!shopData?.customerIdInShop && (
                 <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 mb-6 space-y-4">
                   <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center">Ваши данные для связи</p>
-                  <input className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold" placeholder="Имя" value={tempName} onChange={e => setTempName(e.target.value)} />
-                  <input className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold" placeholder="Телефон" type="tel" value={tempPhone} onChange={e => setTempPhone(e.target.value)} />
+                  <input className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold" placeholder="Как вас зовут?" value={tempName} onChange={e => setTempName(e.target.value)} />
+                  <input className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold" placeholder="Номер телефона" type="tel" value={tempPhone} onChange={e => setTempPhone(e.target.value)} />
                 </div>
               )}
               <div className="space-y-3 mb-6">
@@ -409,11 +421,14 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
             </div>
           </div>
         )}
+        
+        {!initialShopId && (
+          <button onClick={() => setActiveShopId(null)} className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-indigo-500">Вернуться к списку магазинов</button>
+        )}
       </div>
     );
   }
 
-  // 🔹 Иначе — показываем список магазинов и поиск
   return (
     <div className="space-y-8 animate-fade-in pb-20">
       <div className="space-y-4">

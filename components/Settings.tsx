@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { AppSettings } from '../types';
 
 interface SettingsProps {
@@ -7,12 +7,45 @@ interface SettingsProps {
   onUpdate: (s: AppSettings) => void;
   onClear: () => void;
   isOwner?: boolean;
+  userId?: string;
 }
 
-const Settings: React.FC<SettingsProps> = ({ settings, onUpdate, onClear, isOwner }) => {
+const Settings: React.FC<SettingsProps> = ({ settings, onUpdate, onClear, isOwner, userId }) => {
+  const [copied, setCopied] = useState(false);
+
+  const shopUrl = `${window.location.origin}${window.location.pathname}?shop=${userId}`;
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(shopUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black text-slate-800 px-2">Настройки</h2>
+
+      {isOwner && (
+        <div className="bg-indigo-600 p-6 rounded-[40px] shadow-lg text-white space-y-4 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+              <i className="fas fa-link"></i>
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase opacity-60">Ваша публичная ссылка</p>
+              <p className="text-xs font-bold truncate max-w-[200px]">{shopUrl}</p>
+            </div>
+          </div>
+          <p className="text-[10px] leading-relaxed opacity-80 font-medium">Отправьте эту ссылку клиентам, чтобы они могли заказывать товары без регистрации в системе.</p>
+          <button
+            onClick={copyToClipboard}
+            className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${copied ? 'bg-emerald-500' : 'bg-white text-indigo-600'}`}
+          >
+            <i className={`fas ${copied ? 'fa-check' : 'fa-copy'}`}></i>
+            {copied ? 'Скопировано!' : 'Копировать ссылку'}
+          </button>
+        </div>
+      )}
 
       <div className="bg-white p-6 rounded-[40px] border border-slate-100 space-y-6 shadow-sm">
         <div className="space-y-1">
@@ -30,7 +63,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate, onClear, isOwne
            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
             <div>
               <p className="font-black text-slate-700 text-sm">Публичный магазин</p>
-              <p className="text-[10px] text-slate-400 font-bold uppercase">Клиенты могут найти вас по названию</p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase">Магазин виден по ссылке выше</p>
             </div>
             <button
               onClick={() => onUpdate({...settings, isPublic: !settings.isPublic})}
@@ -43,7 +76,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate, onClear, isOwne
           <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
             <div>
               <p className="font-black text-slate-700 text-sm">Показывать товары</p>
-              <p className="text-[10px] text-slate-400 font-bold uppercase">Клиенты увидят вашу витрину в приложении</p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase">Клиенты увидят вашу витрину</p>
             </div>
             <button
               onClick={() => onUpdate({...settings, showProductsToClients: !settings.showProductsToClients})}
@@ -97,7 +130,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate, onClear, isOwne
         <div className="p-6 bg-red-50 rounded-[40px] border border-red-100 animate-fade-in">
           <h3 className="font-black text-red-600 text-sm uppercase tracking-widest mb-2">Опасная зона</h3>
           <p className="text-xs text-red-400 font-medium mb-4 leading-relaxed">
-            Удаление всех данных приведет к полной очистке каталога, истории продаж и кассы. Это действие необратимо.
+            Удаление всех данных приведет к полной очистке каталога, истории продаж и кассы.
           </p>
           <button
             onClick={onClear}
@@ -109,7 +142,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate, onClear, isOwne
       )}
 
       <div className="text-center py-4">
-        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">ИнвентарьПро v2.1.0</p>
+        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">ИнвентарьПро v2.2.0</p>
       </div>
     </div>
   );
