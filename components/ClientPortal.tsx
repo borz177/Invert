@@ -21,9 +21,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const [isSearching, setIsSearching] = useState(false);
   const [isShopLoading, setIsShopLoading] = useState(false);
 
-  // 🔹 НОВОЕ: состояние для глобальной загрузки при входе
-  const [initialLoad, setInitialLoad] = useState(true);
-
   const [shopData, setShopData] = useState<{
     products: Product[];
     sales: Sale[];
@@ -44,18 +41,11 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const touchStart = useRef<number>(0);
   const [selectedOpDetail, setSelectedOpDetail] = useState<any | null>(null);
 
-  // 🔹 Загружаем список магазинов и автоматически открываем первый
+  // Загружаем список магазинов при входе
   useEffect(() => {
     const fetchMyShops = async () => {
       const linked = await db.getData('linkedShops');
-      if (Array.isArray(linked)) {
-        setShopList(linked);
-        // Автоматически открываем первый магазин
-        if (linked.length > 0 && !activeShopId) {
-          setActiveShopId(linked[0].id);
-        }
-      }
-      setInitialLoad(false); // Завершаем начальную загрузку
+      if (Array.isArray(linked)) setShopList(linked);
     };
     fetchMyShops();
   }, []);
@@ -241,16 +231,17 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     alert('Заявка отправлена!');
   };
 
-  // 🔹 Показываем спинер при начальной загрузке ИЛИ при загрузке магазина
-  if (initialLoad || (activeShopId && isShopLoading && !shopData)) {
+  // 🔹 Спинер при загрузке конкретного магазина
+  if (activeShopId && isShopLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-screen animate-fade-in">
         <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-sm font-black text-indigo-600 uppercase tracking-widest">Загрузка магазина...</p>
+        <p className="text-sm font-black text-indigo-600 uppercase tracking-widest">Входим в магазин...</p>
       </div>
     );
   }
 
+  // 🔹 Если выбран магазин и данные загружены — показываем каталог/историю
   if (activeShopId && shopData) {
     return (
       <div className="space-y-6 animate-fade-in pb-32">
@@ -422,6 +413,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     );
   }
 
+  // 🔹 Иначе — показываем список магазинов и поиск
   return (
     <div className="space-y-8 animate-fade-in pb-20">
       <div className="space-y-4">
