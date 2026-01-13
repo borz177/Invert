@@ -170,6 +170,7 @@ const App: React.FC = () => {
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, orders]);
 
   const handleConfirmOrder = (order: Order) => {
+    // 1. Списание товаров
     setProducts(prev => {
       const updated = prev.map(p => {
         const it = order.items.find(x => x.productId === p.id);
@@ -179,39 +180,53 @@ const App: React.FC = () => {
       return updated;
     });
 
-    let finalCustomerId = order.customerId;
-    let name = 'Новый клиент';
-    let phone = '';
+    // 2. Логика сохранения клиента (постоянного или гостя) в базу продавца
+let finalCustomerId = order.customerId;
+let name = 'Новый клиент';
+let phone = '';
 
-    if (order.note && order.note.includes('[Имя:')) {
-      const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
-      const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
-      name = matchName ? matchName[1].trim() : name;
-      phone = matchPhone ? matchPhone[1].trim() : '';
-    }
+// Извлекаем данные из примечания, если есть
+if (order.note && order.note.includes('[Имя:')) {
+  const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
+  const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
+  name = matchName ? matchName[1].trim() : name;
+  phone = matchPhone ? matchPhone[1].trim() : '';
+}
 
-    setCustomers(prev => {
-      const existing = prev.find(c => c.id === order.customerId || (phone && c.phone === phone));
-      if (!existing) {
-        const newCust: Customer = { 
-          id: order.customerId.startsWith('GUEST-') ? `CUST-${Date.now()}` : order.customerId, 
-          name, 
-          phone, 
-          debt: order.paymentMethod === 'DEBT' ? order.total : 0, 
-          discount: 0 
-        };
-        finalCustomerId = newCust.id;
-        const updated = [newCust, ...prev];
-        db.saveData('customers', updated);
-        return updated;
-      } else {
-        finalCustomerId = existing.id;
-        const updated = prev.map(c => c.id === existing.id ? { ...c, debt: (Number(c.debt) || 0) + (order.paymentMethod === 'DEBT' ? order.total : 0) } : c);
-        db.saveData('customers', updated);
-        return updated;
-      }
-    });
+setCustomers(prev => {
+  // Ищем клиента по ID или телефону
+  const existing = prev.find(c =>
+    c.id === order.customerId ||
+    (phone && c.phone === phone)
+  );
 
+  if (!existing) {
+    // Создаём нового клиента
+    const newCust: Customer = {
+      id: order.customerId.startsWith('GUEST-') ? `CUST-${Date.now()}` : order.customerId,
+      name,
+      phone,
+      debt: order.paymentMethod === 'DEBT' ? order.total : 0,
+      discount: 0
+    };
+    finalCustomerId = newCust.id;
+    const updated = [newCust, ...prev];
+    db.saveData('customers', updated);
+    return updated;
+  } else {
+    // Обновляем долг существующего клиента
+    finalCustomerId = existing.id;
+    const updated = prev.map(c =>
+      c.id === existing.id
+        ? { ...c, debt: (Number(c.debt) || 0) + (order.paymentMethod === 'DEBT' ? order.total : 0) }
+        : c
+    );
+    db.saveData('customers', updated);
+    return updated;
+  }
+});
+
+    // 3. Создание продажи
     const newSale: Sale = {
       id: `SALE-ORD-${order.id}`,
       employeeId: currentUser?.id || 'admin',
@@ -222,6 +237,7 @@ const App: React.FC = () => {
       customerId: finalCustomerId
     };
 
+    // 4. Запись в кассу если оплачено сразу
     if (order.paymentMethod !== 'DEBT') {
       const cashEntry: CashEntry = { id: `CS-${Date.now()}`, amount: order.total, type: 'INCOME', category: 'Продажа', description: `Продажа №${newSale.id.slice(-4)}`, date: newSale.date, employeeId: newSale.employeeId };
       setCashEntries(prev => {
@@ -231,6 +247,7 @@ const App: React.FC = () => {
       });
     }
 
+    // 5. Обновление статуса заказа
     setOrders(prev => {
       const updated: Order[] = prev.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o);
       db.saveData('orders', updated);
@@ -249,7 +266,7 @@ const App: React.FC = () => {
   const renderView = () => {
     if (!currentUser) return null;
     if (isClient && view !== 'PROFILE') {
-      return <ClientPortal user={currentUser} onAddOrder={(o) => setOrders(prev => [o, ...prev])} onActiveShopChange={setActiveClientShopName} initialShopId={publicShopId} />;
+      return <ClientPortal user={currentUser} products={products} sales={sales} orders={orders} onAddOrder={(o) => setOrders(prev => [o, ...prev])} onActiveShopChange={setActiveClientShopName} initialShopId={publicShopId} />;
     }
     switch (view) {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={setView} orderCount={orders.filter(o => o.status === 'NEW').length}/>;

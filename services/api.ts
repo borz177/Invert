@@ -70,23 +70,9 @@ export const db = {
       });
       if (!res.ok) return [];
       return await res.json();
-    },
-
-
-  async getAll(): Promise<any[]> {
-      try {
-        const res = await fetchWithTimeout(`${API_BASE}/shops/all`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' }
-        });
-        if (!res.ok) return [];
-        return await res.json();
-      } catch (e) {
-        console.error('Failed to fetch all shops:', e);
-        return [];
-      }
     }
   },
+
 
   async getData(key: string) {
     const userJson = localStorage.getItem('currentUser');
