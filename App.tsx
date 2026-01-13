@@ -180,42 +180,51 @@ const App: React.FC = () => {
       return updated;
     });
 
-    let finalCustomerId = order.customerId;
-
     // 2. Логика сохранения клиента (постоянного или гостя) в базу продавца
-    let name = 'Новый клиент';
-    let phone = '';
+let finalCustomerId = order.customerId;
+let name = 'Новый клиент';
+let phone = '';
 
-    if (order.note && order.note.includes('[Имя:')) {
-      const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
-      const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
-      name = matchName ? matchName[1].trim() : name;
-      phone = matchPhone ? matchPhone[1].trim() : '';
-    }
+// Извлекаем данные из примечания, если есть
+if (order.note && order.note.includes('[Имя:')) {
+  const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
+  const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
+  name = matchName ? matchName[1].trim() : name;
+  phone = matchPhone ? matchPhone[1].trim() : '';
+}
 
-    setCustomers(prev => {
-      const existing = prev.find(c => c.id === order.customerId || (phone && c.phone === phone));
-      if (!existing) {
-        // Создаем нового клиента в базе продавца
-        const newCust: Customer = {
-          id: order.customerId.startsWith('GUEST-') ? `CUST-${Date.now()}` : order.customerId,
-          name,
-          phone,
-          debt: order.paymentMethod === 'DEBT' ? order.total : 0,
-          discount: 0
-        };
-        finalCustomerId = newCust.id;
-        const updated = [newCust, ...prev];
-        db.saveData('customers', updated);
-        return updated;
-      } else {
-        // Обновляем долг существующего клиента
-        finalCustomerId = existing.id;
-        const updated = prev.map(c => c.id === existing.id ? { ...c, debt: (Number(c.debt) || 0) + (order.paymentMethod === 'DEBT' ? order.total : 0) } : c);
-        db.saveData('customers', updated);
-        return updated;
-      }
-    });
+setCustomers(prev => {
+  // Ищем клиента по ID или телефону
+  const existing = prev.find(c =>
+    c.id === order.customerId ||
+    (phone && c.phone === phone)
+  );
+
+  if (!existing) {
+    // Создаём нового клиента
+    const newCust: Customer = {
+      id: order.customerId.startsWith('GUEST-') ? `CUST-${Date.now()}` : order.customerId,
+      name,
+      phone,
+      debt: order.paymentMethod === 'DEBT' ? order.total : 0,
+      discount: 0
+    };
+    finalCustomerId = newCust.id;
+    const updated = [newCust, ...prev];
+    db.saveData('customers', updated);
+    return updated;
+  } else {
+    // Обновляем долг существующего клиента
+    finalCustomerId = existing.id;
+    const updated = prev.map(c =>
+      c.id === existing.id
+        ? { ...c, debt: (Number(c.debt) || 0) + (order.paymentMethod === 'DEBT' ? order.total : 0) }
+        : c
+    );
+    db.saveData('customers', updated);
+    return updated;
+  }
+});
 
     // 3. Создание продажи
     const newSale: Sale = {
