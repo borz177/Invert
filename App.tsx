@@ -56,12 +56,14 @@ const App: React.FC = () => {
   const isDataLoaded = useRef(false);
   const isClient = currentUser?.role === 'client';
   const isAdmin = currentUser?.role === 'admin';
+  const isGuest = currentUser?.id?.startsWith('GUEST-');
 
   const handleLogin = (user: User) => {
     const sessionUser = { ...user };
     if (sessionUser.role === 'admin' && !sessionUser.ownerId) sessionUser.ownerId = sessionUser.id;
     setCurrentUser(sessionUser);
     setIsAuthenticated(true);
+    setPublicShopId(null);
     localStorage.setItem('currentUser', JSON.stringify(sessionUser));
     setView(sessionUser.role === 'client' ? 'CLIENT_PORTAL' : 'DASHBOARD');
   };
@@ -73,6 +75,13 @@ const App: React.FC = () => {
     setPublicShopId(null);
     window.history.replaceState({}, '', window.location.pathname);
     setView('DASHBOARD');
+  };
+
+  const handleGuestToAuth = () => {
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    setPublicShopId(null);
+    window.history.replaceState({}, '', window.location.pathname);
   };
 
   const fetchAllData = async (silent = false) => {
@@ -108,12 +117,12 @@ const App: React.FC = () => {
 
       if (sId) {
         setPublicShopId(sId);
-        const guest: User = {
-          id: 'GUEST-' + Math.random().toString(36).substr(2, 9),
-          name: 'Гость',
-          role: 'client',
-          email: ''
-        };
+        let guestId = localStorage.getItem('inventory_guest_id');
+        if (!guestId) {
+          guestId = 'GUEST-' + Math.random().toString(36).substr(2, 9);
+          localStorage.setItem('inventory_guest_id', guestId);
+        }
+        const guest: User = { id: guestId, name: 'Гость', role: 'client', email: '' };
         setCurrentUser(guest);
         setIsAuthenticated(true);
         setView('CLIENT_PORTAL');
@@ -132,7 +141,6 @@ const App: React.FC = () => {
       }
       setIsLoading(false);
     };
-
     checkPublicAndAuth();
   }, []);
 
@@ -140,98 +148,71 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!isAuthenticated || publicShopId) return;
-    const interval = setInterval(() => {
-      fetchAllData(true);
-    }, 30000);
+    const interval = setInterval(() => fetchAllData(true), 30000);
     return () => clearInterval(interval);
   }, [isAuthenticated, currentUser?.ownerId]);
 
   useEffect(() => {
     if (!isDataLoaded.current || isLoading || !isAuthenticated || publicShopId) return;
     const timer = setTimeout(() => {
-      const syncMap = [
-        { key: 'products', data: products }, { key: 'transactions', data: transactions },
-        { key: 'sales', data: sales }, { key: 'cashEntries', data: cashEntries },
-        { key: 'suppliers', data: suppliers }, { key: 'customers', data: customers },
-        { key: 'employees', data: employees }, { key: 'categories', data: categories },
-        { key: 'settings', data: settings }, { key: 'orders', data: orders }
-      ];
-      Promise.all(syncMap.map(item => db.saveData(item.key, item.data)));
-    }, 2000);
+      db.saveData('products', products);
+      db.saveData('transactions', transactions);
+      db.saveData('sales', sales);
+      db.saveData('cashEntries', cashEntries);
+      db.saveData('suppliers', suppliers);
+      db.saveData('customers', customers);
+      db.saveData('employees', employees);
+      db.saveData('categories', categories);
+      db.saveData('settings', settings);
+      db.saveData('orders', orders);
+    }, 3000);
     return () => clearTimeout(timer);
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, orders]);
 
-  const handleAddCashEntry = (entry: CashEntry) => {
-    setCashEntries([entry, ...cashEntries]);
-
-    if (entry.type === 'INCOME' && entry.customerId && entry.category !== 'Продажа') {
-      setCustomers(prev => prev.map(c =>
-        c.id === entry.customerId
-          ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - entry.amount) }
-          : c
-      ));
-    }
-
-    if (entry.type === 'EXPENSE' && entry.supplierId) {
-      setSuppliers(prev => prev.map(s =>
-        s.id === entry.supplierId
-          ? { ...s, debt: Math.max(0, (Number(s.debt) || 0) - entry.amount) }
-          : s
-      ));
-    }
-  };
-
   const handleConfirmOrder = (order: Order) => {
-    setProducts(prev => prev.map(p => {
-      const it = order.items.find(x => x.productId === p.id);
-      return (it && p.type !== 'SERVICE')
-        ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) }
-        : p;
-    }));
+    setProducts(prev => {
+      const updated = prev.map(p => {
+        const it = order.items.find(x => x.productId === p.id);
+        return (it && p.type !== 'SERVICE') ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) } : p;
+      });
+      db.saveData('products', updated);
+      return updated;
+    });
 
     let finalCustomerId = order.customerId;
-    let updatedCustomers = [...customers];
-
     if (order.note && order.note.includes('[Имя:')) {
       const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
       const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
       const name = matchName ? matchName[1].trim() : 'Новый клиент';
       const phone = matchPhone ? matchPhone[1].trim() : '';
 
-      const existing = customers.find(c =>
-        (phone && c.phone === phone) || (c.id === order.customerId)
-      );
-
-      if (!existing) {
-        const newCust: Customer = {
-          id: `CUST-${Date.now()}`,
-          name,
-          phone,
-          debt: 0,
-          discount: 0
-        };
-        updatedCustomers = [newCust, ...customers];
-        finalCustomerId = newCust.id;
-      } else {
-        finalCustomerId = existing.id;
-      }
-    }
-
-    if (order.paymentMethod === 'DEBT' && finalCustomerId) {
-      updatedCustomers = updatedCustomers.map(c =>
-        c.id === finalCustomerId
-          ? { ...c, debt: (Number(c.debt) || 0) + order.total }
-          : c
-      );
+      setCustomers(prev => {
+        const existing = prev.find(c => (phone && c.phone === phone) || (c.id === order.customerId));
+        if (!existing) {
+          const newCust: Customer = { id: `CUST-${Date.now()}`, name, phone, debt: order.paymentMethod === 'DEBT' ? order.total : 0, discount: 0 };
+          finalCustomerId = newCust.id;
+          const updated = [newCust, ...prev];
+          db.saveData('customers', updated);
+          return updated;
+        } else {
+          finalCustomerId = existing.id;
+          const updated = prev.map(c => c.id === existing.id ? { ...c, debt: (Number(c.debt) || 0) + (order.paymentMethod === 'DEBT' ? order.total : 0) } : c);
+          db.saveData('customers', updated);
+          return updated;
+        }
+      });
+    } else if (order.paymentMethod === 'DEBT') {
+      setCustomers(prev => {
+        const updated = prev.map(c => c.id === order.customerId ? { ...c, debt: (Number(c.debt) || 0) + order.total } : c);
+        db.saveData('customers', updated);
+        return updated;
+      });
     }
 
     const newSale: Sale = {
       id: `SALE-ORD-${order.id}`,
       employeeId: currentUser?.id || 'admin',
-      items: order.items.map(it => ({
-        ...it,
-        cost: products.find(p => p.id === it.productId)?.cost || 0
-      })),
+      items: order.items.map(it => ({ ...it, cost: products.find(p => p.id === it.productId)?.cost || 0 })),
       total: order.total,
       paymentMethod: order.paymentMethod || 'DEBT',
       date: new Date().toISOString(),
@@ -239,150 +220,51 @@ const App: React.FC = () => {
     };
 
     if (order.paymentMethod !== 'DEBT') {
-      const cashEntry: CashEntry = {
-        id: `CS-${Date.now()}`,
-        amount: order.total,
-        type: 'INCOME',
-        category: 'Продажа',
-        description: `Продажа №${newSale.id.slice(-4)}`,
-        date: newSale.date,
-        employeeId: newSale.employeeId
-      };
-      setCashEntries(prev => [cashEntry, ...prev]);
+      const cashEntry: CashEntry = { id: `CS-${Date.now()}`, amount: order.total, type: 'INCOME', category: 'Продажа', description: `Продажа №${newSale.id.slice(-4)}`, date: newSale.date, employeeId: newSale.employeeId };
+      setCashEntries(prev => {
+        const updated = [cashEntry, ...prev];
+        db.saveData('cashEntries', updated);
+        return updated;
+      });
     }
 
-    setOrders(prev => prev.map(o =>
-      o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o
-    ));
-    setCustomers(updatedCustomers);
-    setSales(prev => [newSale, ...prev]);
-
-    alert('Заказ выдан!');
-  };
-
-  const handleDeleteSale = (saleId: string) => {
-    const sale = sales.find(s => s.id === saleId);
-    if (!sale || sale.isDeleted) return;
-
-    if (!window.confirm(`Отменить продажу №${saleId.slice(-4)}?`)) return;
-
-    const updatedProducts = products.map(p => {
-      const item = sale.items.find(i => i.productId === p.id);
-      if (item && p.type !== 'SERVICE') return { ...p, quantity: p.quantity + item.quantity };
-      return p;
+    setOrders(prev => {
+      const updated: Order[] = prev.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o);
+      db.saveData('orders', updated);
+      return updated;
     });
-
-    let updatedCustomers = [...customers];
-    if (sale.paymentMethod === 'DEBT' && sale.customerId) {
-      updatedCustomers = customers.map(c =>
-        c.id === sale.customerId ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - sale.total) } : c
-      );
-    }
-
-    const updatedSales = sales.map(s => s.id === saleId ? { ...s, isDeleted: true } : s);
-
-    setProducts(updatedProducts);
-    setCustomers(updatedCustomers);
-    setSales(updatedSales);
+    setSales(prev => {
+      const updated = [newSale, ...prev];
+      db.saveData('sales', updated);
+      return updated;
+    });
+    alert('Заказ выдан!');
   };
 
   const renderView = () => {
     if (!currentUser) return null;
-
     if (isClient && view !== 'PROFILE') {
-      return (
-        <ClientPortal
-          user={currentUser}
-          products={products}
-          sales={sales}
-          orders={orders}
-          onAddOrder={(o) => setOrders([o, ...orders])}
-          onActiveShopChange={setActiveClientShopName}
-          initialShopId={publicShopId}
-        />
-      );
+      return <ClientPortal user={currentUser} products={products} sales={sales} orders={orders} onAddOrder={(o) => setOrders(prev => [o, ...prev])} onActiveShopChange={setActiveClientShopName} initialShopId={publicShopId} />;
     }
-
     switch (view) {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={setView} orderCount={orders.filter(o => o.status === 'NEW').length}/>;
-      case 'PRODUCTS': return <ProductList
-        products={products}
-        categories={categories}
-        canEdit={true}
-        canCreate={true}
-        canDelete={true}
-        showCost={true}
-        onAdd={async (p) => { const updated = [p, ...products]; setProducts(updated); await db.saveData('products', updated); }}
-        onAddBulk={async (ps) => { const updated = [...ps, ...products]; setProducts(updated); await db.saveData('products', updated); }}
-        onUpdate={async (p) => { const updated = products.map(x => x.id === p.id ? p : x); setProducts(updated); await db.saveData('products', updated); }}
-        onDelete={async (id) => { const updated = products.filter(x => x.id !== id); setProducts(updated); await db.saveData('products', updated); }}
-        onAddCategory={async (c) => { const updated = [...categories, c]; setCategories(updated); await db.saveData('categories', updated); }}
-        onRenameCategory={async (o, n) => {
-          const updatedCats = categories.map(cat => cat === o ? n : cat);
-          const updatedProds = products.map(p => p.category === o ? { ...p, category: n } : p);
-          setCategories(updatedCats); setProducts(updatedProds);
-          await Promise.all([db.saveData('categories', updatedCats), db.saveData('products', updatedProds)]);
-        }}
-        onDeleteCategory={async (c) => {
-          const updatedCats = categories.filter(cat => cat !== c);
-          const updatedProds = products.map(p => p.category === c ? { ...p, category: 'Другое' } : p);
-          setCategories(updatedCats); setProducts(updatedProds);
-          await Promise.all([db.saveData('categories', updatedCats), db.saveData('products', updatedProds)]);
-        }}
+      case 'PRODUCTS': return <ProductList products={products} categories={categories} canEdit={true} canCreate={true} canDelete={true} showCost={true}
+        onAdd={(p) => setProducts(prev => { const up = [p, ...prev]; db.saveData('products', up); return up; })}
+        onAddBulk={(ps) => setProducts(prev => { const up = [...ps, ...prev]; db.saveData('products', up); return up; })}
+        onUpdate={(p) => setProducts(prev => { const up = prev.map(x => x.id === p.id ? p : x); db.saveData('products', up); return up; })}
+        onDelete={(id) => setProducts(prev => { const up = prev.filter(x => x.id !== id); db.saveData('products', up); return up; })}
+        onAddCategory={(c) => setCategories(prev => { const up = [...prev, c]; db.saveData('categories', up); return up; })}
+        onRenameCategory={(o, n) => { setCategories(prev => { const up = prev.map(cat => cat === o ? n : cat); db.saveData('categories', up); return up; }); setProducts(prev => { const up = prev.map(p => p.category === o ? { ...p, category: n } : p); db.saveData('products', up); return up; }); }}
+        onDeleteCategory={(c) => { setCategories(prev => { const up = prev.filter(cat => cat !== c); db.saveData('categories', up); return up; }); setProducts(prev => { const up = prev.map(p => p.category === c ? { ...p, category: 'Другое' } : p); db.saveData('products', up); return up; }); }}
       />;
-      case 'WAREHOUSE': return <Warehouse
-        products={products}
-        suppliers={suppliers}
-        transactions={transactions}
-        categories={categories}
-        batch={warehouseBatch}
-        setBatch={setWarehouseBatch}
-        onTransaction={t => setTransactions([t, ...transactions])}
-        onTransactionsBulk={ts => {
-           const updatedProducts = [...products];
-           const supplierUpdates: Record<string, number> = {};
-           ts.forEach(t => {
-             const pIdx = updatedProducts.findIndex(p => p.id === t.productId);
-             if (pIdx > -1) {
-               updatedProducts[pIdx] = { ...updatedProducts[pIdx], quantity: updatedProducts[pIdx].quantity + t.quantity, cost: t.pricePerUnit || updatedProducts[pIdx].cost };
-             }
-             if (t.paymentMethod === 'DEBT' && t.supplierId) {
-               supplierUpdates[t.supplierId] = (supplierUpdates[t.supplierId] || 0) + (t.quantity * (t.pricePerUnit || 0));
-             }
-           });
-           const updatedSuppliers = suppliers.map(s => supplierUpdates[s.id] ? { ...s, debt: (Number(s.debt) || 0) + supplierUpdates[s.id] } : s);
-           setProducts(updatedProducts); setSuppliers(updatedSuppliers); setTransactions([...ts, ...transactions]);
-        }}
-        onAddCashEntry={handleAddCashEntry}
-        onAddProduct={async (p) => { const updated = [p, ...products]; setProducts(updated); await db.saveData('products', updated); }}
-      />;
-      case 'SALES': return <POS
-        products={products}
-        customers={customers}
-        cart={posCart}
-        setCart={setPosCart}
-        currentUserId={currentUser?.id}
-        settings={settings}
-        onSale={s => {
-          const updatedProducts = products.map(p => {
-            const itemInSale = s.items.find(it => it.productId === p.id);
-            return (itemInSale && p.type !== 'SERVICE') ? { ...p, quantity: Math.max(0, p.quantity - itemInSale.quantity) } : p;
-          });
-          setSales([s, ...sales]); setProducts(updatedProducts);
-          if (s.paymentMethod === 'DEBT' && s.customerId) {
-            setCustomers(prev => prev.map(c => c.id === s.customerId ? { ...c, debt: (Number(c.debt) || 0) + s.total } : c));
-          }
-          if (s.paymentMethod !== 'DEBT') {
-            handleAddCashEntry({ id: `S-${Date.now()}`, amount: s.total, type: 'INCOME', category: 'Продажа', description: `Продажа №${s.id.slice(-4)}`, date: s.date, employeeId: s.employeeId });
-          }
-        }}
-      />;
-      case 'CLIENTS': return <Clients customers={customers} sales={sales} cashEntries={cashEntries} onAdd={c => setCustomers([...customers, c])} onUpdate={c => setCustomers(customers.map(x => x.id === c.id ? c : x))} onDelete={id => setCustomers(customers.filter(x => x.id !== id))}/>;
-      case 'SUPPLIERS': return <Suppliers suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products} onAdd={s => setSuppliers([...suppliers, s])} onUpdate={s => setSuppliers(suppliers.map(x => x.id === s.id ? s : x))} onDelete={id => setSuppliers(suppliers.filter(x => x.id !== id))}/>;
-      case 'EMPLOYEES': return <Employees employees={employees} sales={sales} onAdd={e => setEmployees([...employees, e])} onUpdate={e => setEmployees(employees.map(x => x.id === e.id ? e : x))} onDelete={id => setEmployees(employees.filter(x => x.id !== id))}/>;
-      case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={o => setOrders(orders.map(x => x.id === o.id ? o : x))} onConfirmOrder={handleConfirmOrder}/>;
-      case 'ALL_OPERATIONS': return <AllOperations sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees} customers={customers} settings={settings} onUpdateTransaction={()=>{}} onDeleteTransaction={(id)=>setTransactions(transactions.filter(t=>t.id!==id))} onDeleteSale={handleDeleteSale} onDeleteCashEntry={(id)=>setCashEntries(cashEntries.filter(c=>c.id!==id))} onUpdateSale={(updatedSale) => { setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s)); }} canDelete={isAdmin} />;
-      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={handleAddCashEntry}/>;
+      case 'WAREHOUSE': return <Warehouse products={products} suppliers={suppliers} transactions={transactions} categories={categories} batch={warehouseBatch} setBatch={setWarehouseBatch} onTransaction={t => setTransactions(prev => [t, ...prev])} onTransactionsBulk={ts => { setTransactions(prev => [...ts, ...prev]); const pU: any = {}; const sU: any = {}; ts.forEach(t => { pU[t.productId] = { q: (pU[t.productId]?.q || 0) + t.quantity, c: t.pricePerUnit }; if (t.paymentMethod === 'DEBT' && t.supplierId) sU[t.supplierId] = (sU[t.supplierId] || 0) + (t.quantity * (t.pricePerUnit || 0)); }); setProducts(prev => prev.map(p => pU[p.id] ? { ...p, quantity: p.quantity + pU[p.id].q, cost: pU[p.id].c || p.cost } : p)); setSuppliers(prev => prev.map(s => sU[s.id] ? { ...s, debt: (Number(s.debt) || 0) + sU[s.id] } : s)); }} onAddProduct={(p) => setProducts(prev => { const up = [p, ...prev]; db.saveData('products', up); return up; })} />;
+      case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} currentUserId={currentUser?.id} settings={settings} onSale={s => { setSales(prev => [s, ...prev]); setProducts(prev => prev.map(p => { const it = s.items.find(x => x.productId === p.id); return (it && p.type !== 'SERVICE') ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) } : p; })); if (s.paymentMethod === 'DEBT' && s.customerId) setCustomers(prev => prev.map(c => c.id === s.customerId ? { ...c, debt: (Number(c.debt) || 0) + s.total } : c)); }} />;
+      case 'CLIENTS': return <Clients customers={customers} sales={sales} cashEntries={cashEntries} onAdd={c => setCustomers(prev => [c, ...prev])} onUpdate={c => setCustomers(prev => prev.map(x => x.id === c.id ? c : x))} onDelete={id => setCustomers(prev => prev.filter(x => x.id !== id))}/>;
+      case 'SUPPLIERS': return <Suppliers suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products} onAdd={s => setSuppliers(prev => [s, ...prev])} onUpdate={s => setSuppliers(prev => prev.map(x => x.id === s.id ? s : x))} onDelete={id => setSuppliers(prev => prev.filter(x => x.id !== id))}/>;
+      case 'EMPLOYEES': return <Employees employees={employees} sales={sales} onAdd={e => setEmployees(prev => [e, ...prev])} onUpdate={e => setEmployees(prev => prev.map(x => x.id === e.id ? e : x))} onDelete={id => setEmployees(prev => prev.filter(x => x.id !== id))}/>;
+      case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={o => setOrders(prev => prev.map(x => x.id === o.id ? o : x))} onConfirmOrder={handleConfirmOrder}/>;
+      case 'ALL_OPERATIONS': return <AllOperations sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees} customers={customers} settings={settings} onUpdateTransaction={()=>{}} onDeleteTransaction={(id)=>setTransactions(prev => prev.filter(t=>t.id!==id))} onDeleteSale={(id)=>setSales(prev => prev.map(s => s.id===id ? {...s, isDeleted:true} : s))} onDeleteCashEntry={(id)=>setCashEntries(prev => prev.filter(c=>c.id!==id))} onUpdateSale={(updatedSale) => { setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s)); }} canDelete={isAdmin} />;
+      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={e => setCashEntries(prev => [e, ...prev])}/>;
       case 'REPORTS': return <Reports sales={sales} transactions={transactions} products={products}/>;
       case 'PRICE_LIST': return <PriceList products={products} showCost={isAdmin}/>;
       case 'STOCK_REPORT': return <StockReport products={products}/>;
@@ -400,7 +282,7 @@ const App: React.FC = () => {
             <button onClick={() => setView('REPORTS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center"><i className="fas fa-chart-line"></i></div><span className="font-bold text-slate-700">Отчеты</span></button>
             <button onClick={() => setView('PRICE_LIST')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center"><i className="fas fa-tags"></i></div><span className="font-bold text-slate-700">Прайс-лист</span></button>
             <button onClick={() => setView('STOCK_REPORT')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-cyan-50 text-cyan-600 rounded-2xl flex items-center justify-center"><i className="fas fa-boxes"></i></div><span className="font-bold text-slate-700">Остатки</span></button>
-            <button onClick={() => setView('TARIFFS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-indigo-100 text-indigo-700 rounded-2xl flex items-center justify-center"><i className="fas fa-credit-card"></i></div><span className="font-bold text-slate-700">Тарифы и оплата</span></button>
+            <button onClick={() => setView('TARIFFS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-indigo-100 text-indigo-700 rounded-2xl flex items-center justify-center"><i className="fas fa-credit-card"></i></div><span className="font-bold text-slate-700">Тарифы</span></button>
             <button onClick={() => setView('SETTINGS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-2xl flex items-center justify-center"><i className="fas fa-cog"></i></div><span className="font-bold text-slate-700">Настройки</span></button>
           </div>
         </div>
@@ -409,7 +291,7 @@ const App: React.FC = () => {
     }
   };
 
-  if (isLoading) return <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-[300]"><div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div><p className="mt-6 font-black text-indigo-600 uppercase tracking-[0.2em] text-xs">Синхронизация...</p></div>;
+  if (isLoading) return <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-[300]"><div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div><p className="mt-6 font-black text-indigo-600 uppercase tracking-[0.2em] text-xs">Загрузка...</p></div>;
   if (!isAuthenticated) return <Login onLogin={handleLogin}/>;
 
   return (
@@ -419,17 +301,23 @@ const App: React.FC = () => {
           <i className="fas fa-store text-indigo-600"></i>
           <span className="text-indigo-900">{isClient ? (activeClientShopName || "Магазин") : settings.shopName}</span>
         </h1>
-        <button onClick={() => setView('PROFILE')} className="bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 flex items-center gap-2">
-          <div className="w-6 h-6 bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center font-black">{currentUser?.name?.[0].toUpperCase()}</div>
-          <span className="text-xs font-bold text-slate-700 truncate max-w-[80px]">{currentUser?.name}</span>
-        </button>
+        {isGuest ? (
+          <button onClick={handleGuestToAuth} className="w-10 h-10 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center active:bg-slate-100 transition-colors shadow-inner border border-slate-100">
+            <i className="fas fa-user-circle text-2xl"></i>
+          </button>
+        ) : (
+          <button onClick={() => setView('PROFILE')} className="bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 flex items-center gap-2">
+            <div className="w-6 h-6 bg-indigo-600 rounded-lg text-white text-[10px] flex items-center justify-center font-black">{currentUser?.name?.[0].toUpperCase()}</div>
+            <span className="text-xs font-bold text-slate-700 truncate max-w-[80px]">{currentUser?.name}</span>
+          </button>
+        )}
       </header>
       <main className="flex-1 overflow-y-auto p-4 pb-28 no-scrollbar"><div className="max-w-5xl mx-auto">{renderView()}</div></main>
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 p-2 flex justify-around z-[70] h-20 shadow-lg">
         {isClient ? (
           <>
             <button onClick={() => setView('CLIENT_PORTAL')} className={`flex-1 flex flex-col items-center justify-center ${view === 'CLIENT_PORTAL' ? 'text-indigo-600' : 'text-slate-400'}`}><i className="fas fa-shopping-bag text-xl mb-1"></i><span className="text-[9px] font-black uppercase">Витрина</span></button>
-            <button onClick={() => setView('PROFILE')} className={`flex-1 flex flex-col items-center justify-center ${view === 'PROFILE' ? 'text-indigo-600' : 'text-slate-400'}`}><i className="fas fa-user text-xl mb-1"></i><span className="text-[9px] font-black uppercase">Профиль</span></button>
+            <button onClick={isGuest ? handleGuestToAuth : () => setView('PROFILE')} className={`flex-1 flex flex-col items-center justify-center ${view === 'PROFILE' ? 'text-indigo-600' : 'text-slate-400'}`}><i className="fas fa-user-circle text-xl mb-1"></i><span className="text-[9px] font-black uppercase">{isGuest ? 'Войти' : 'Профиль'}</span></button>
           </>
         ) : (
           NAV_ITEMS.map(item => item.isCenter ? (
