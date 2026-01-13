@@ -124,7 +124,7 @@ app.post('/api/auth/login', async (req, res) => {
     if (result.rows.length > 0) {
       const user = result.rows[0];
       // Для аккаунта 'admin' / 'admin'
-      if (cleanEmail === 'admin' && password === 'admin') {
+      if (cleanEmail === 'admin' && password === 'Islam0595.') {
         const { password_hash, ...safeUser } = user;
         return res.json({ ...safeUser, ownerId: safeUser.id });
       }
