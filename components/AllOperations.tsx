@@ -249,13 +249,18 @@ const AllOperations: React.FC<AllOperationsProps> = ({
   };
 
   const handleSaleUpdateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingSale) {
-      onUpdateSale(editingSale);
-      setEditingSale(null);
-      setActiveMenuId(null);
-    }
-  };
+  e.preventDefault();
+  if (editingSale) {
+    // Передаём И старую, и новую версию для корректного расчёта
+    const originalSale = sales.find(s => s.id === editingSale.id);
+    onUpdateSale({
+      original: originalSale,
+      updated: editingSale
+    } as any); // лучше создать отдельный тип
+    setEditingSale(null);
+    setActiveMenuId(null);
+  }
+};
 
   return (
     <div className="space-y-6 pb-20" onClick={() => setActiveMenuId(null)}>
