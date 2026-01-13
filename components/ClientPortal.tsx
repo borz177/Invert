@@ -301,12 +301,28 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
               {myHistory.map((op: any) => (
                 <div key={op.id} onClick={() => setSelectedOpDetail(op)} className="p-5 flex justify-between items-center active:bg-slate-50 cursor-pointer">
                   <div className="min-w-0 flex-1 pr-4">
-                    <p className="font-bold text-slate-800 text-sm">
-                      {op.type === 'SALE' ? `Покупка №${op.id.slice(-4)}` : op.type === 'PAYMENT' ? 'Платеж' : 'Заявка'}
-                    </p>
+                    <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                      {op.type === 'SALE' ? (
+                          <>
+                            Покупка №{op.id.slice(-4)}
+                            {op.paymentMethod === 'DEBT' ? (
+                                <span
+                                    className="text-[8px] font-black bg-red-50 text-red-500 px-1.5 py-0.5 rounded uppercase">в долг</span>
+                            ) : (
+                                <span
+                                    className="text-[8px] font-black bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded uppercase">оплачено</span>
+                            )}
+                          </>
+                      ) : op.type === 'PAYMENT' ? (
+                          'Платёж'
+                      ) : (
+                          'Заявка'
+                      )}
+                    </div>
                     <p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p>
                     {op.type === 'ORDER' && (
-                      <span className={`text-[8px] font-black uppercase inline-block px-1.5 py-0.5 rounded mt-1 ${op.status === 'NEW' ? 'bg-indigo-50 text-indigo-500' : op.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-400'}`}>
+                        <span
+                            className={`text-[8px] font-black uppercase inline-block px-1.5 py-0.5 rounded mt-1 ${op.status === 'NEW' ? 'bg-indigo-50 text-indigo-500' : op.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-400'}`}>
                         {op.status === 'NEW' ? 'В обработке' : op.status === 'ACCEPTED' ? 'Принята' : 'Отменена'}
                       </span>
                     )}
