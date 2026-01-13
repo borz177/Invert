@@ -164,8 +164,8 @@ const ProductList: React.FC<ProductListProps> = ({
   );
 
   const activeProducts = selectedCategory
-    ? filteredBySearch.filter(p => p.category === selectedCategory)
-    : [];
+  ? filteredBySearch.filter(p => p.category === selectedCategory)
+  : filteredBySearch;
 
   const productCountPerCategory = products.reduce((acc, p) => {
     acc[p.category] = (acc[p.category] || 0) + 1;
