@@ -184,7 +184,7 @@ const App: React.FC = () => {
       employeeId: currentUser?.id || 'admin',
       items: order.items.map(it => ({ ...it, cost: products.find(p => p.id === it.productId)?.cost || 0 })),
       total: order.total,
-      paymentMethod: 'DEBT',
+      paymentMethod: order.paymentMethod || 'DEBT',
       date: new Date().toISOString(),
       customerId: finalCustomerId
     };

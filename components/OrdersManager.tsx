@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Order, Customer, Product } from '../types';
 
@@ -13,6 +12,7 @@ interface OrdersManagerProps {
 const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, products, onUpdateOrder, onConfirmOrder }) => {
   const [filter, setFilter] = useState<'ALL' | 'NEW' | 'ACCEPTED' | 'CONFIRMED' | 'CANCELLED'>('NEW');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
 
   const filteredOrders = orders.filter(o => filter === 'ALL' || o.status === filter)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -48,6 +48,10 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
   const handleCall = (phone: string) => {
     if (phone) window.location.href = `tel:${phone}`;
     else alert('Номер телефона не указан');
+  };
+
+  const recalculateTotal = (items: Order['items']) => {
+    return items.reduce((sum, item) => sum + item.quantity * item.price, 0);
   };
 
   return (
@@ -95,7 +99,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
         {filteredOrders.length === 0 && <div className="py-24 text-center text-slate-300 italic text-sm">В этой категории пусто</div>}
       </div>
 
-      {selectedOrder && (
+      {selectedOrder && !isEditing && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setSelectedOrder(null)}>
           <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[40px] shadow-2xl p-6 max-h-[95vh] flex flex-col animate-slide-up overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-6">
@@ -170,7 +174,7 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
 
                 {selectedOrder.status === 'ACCEPTED' && (
                   <button
-                    onClick={() => { onConfirmOrder(selectedOrder); setSelectedOrder(null); }}
+                    onClick={() => setIsEditing(true)}
                     className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all uppercase tracking-widest text-[10px]"
                   >
                     Выдать / В продажу
@@ -183,6 +187,127 @@ const OrdersManager: React.FC<OrdersManagerProps> = ({ orders, customers, produc
                    <i className="fas fa-check-circle mb-1 text-xl"></i> Заказ выдан и оплачен
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно редактирования и выдачи */}
+      {isEditing && selectedOrder && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-end justify-center p-4" onClick={() => setIsEditing(false)}>
+          <div className="bg-white w-full max-w-md rounded-t-[40px] p-6 max-h-[85vh] overflow-y-auto animate-slide-up" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-800">Редактировать заказ</h3>
+              <button onClick={() => setIsEditing(false)} className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center">
+                <i className="fas fa-times text-slate-500"></i>
+              </button>
+            </div>
+
+            {/* Товары в заказе — с возможностью редактирования */}
+            <div className="space-y-3 mb-6">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Товары</p>
+              {selectedOrder.items.map((item, idx) => {
+                const prod = products.find(p => p.id === item.productId);
+                return (
+                  <div key={idx} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-slate-800 text-sm truncate">{prod?.name || '---'}</p>
+                      <div className="flex gap-2 mt-1">
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={e => {
+                            const newQty = Math.max(1, parseFloat(e.target.value) || 1);
+                            const updatedItems = [...selectedOrder.items];
+                            updatedItems[idx] = { ...item, quantity: newQty };
+                            setSelectedOrder({ ...selectedOrder, items: updatedItems, total: recalculateTotal(updatedItems) });
+                          }}
+                          className="w-16 p-1 text-xs border border-slate-200 rounded text-center"
+                        />
+                        <span className="text-[10px] text-slate-400">x</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={item.price}
+                          onChange={e => {
+                            const newPrice = Math.max(0, parseFloat(e.target.value) || 0);
+                            const updatedItems = [...selectedOrder.items];
+                            updatedItems[idx] = { ...item, price: newPrice };
+                            setSelectedOrder({ ...selectedOrder, items: updatedItems, total: recalculateTotal(updatedItems) });
+                          }}
+                          className="w-20 p-1 text-xs border border-slate-200 rounded text-center"
+                        />
+                        <span className="text-[10px] text-slate-400">₽</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const updatedItems = selectedOrder.items.filter((_, i) => i !== idx);
+                        setSelectedOrder({ ...selectedOrder, items: updatedItems, total: recalculateTotal(updatedItems) });
+                      }}
+                      className="text-red-400 p-1"
+                    >
+                      <i className="fas fa-trash-alt text-xs"></i>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Итого */}
+            <div className="bg-slate-800 p-4 rounded-2xl text-white mb-6">
+              <div className="flex justify-between">
+                <span className="text-[10px] opacity-70 uppercase">Итого:</span>
+                <span className="text-xl font-black">
+                  {selectedOrder.total.toLocaleString()} ₽
+                </span>
+              </div>
+            </div>
+
+            {/* Способ оплаты */}
+            <div className="mb-6">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Способ оплаты</p>
+              <div className="grid grid-cols-3 gap-2">
+                {(['CASH', 'CARD', 'DEBT'] as const).map(method => (
+                  <button
+                    key={method}
+                    onClick={() => setSelectedOrder({ ...selectedOrder, paymentMethod: method })}
+                    className={`p-3 rounded-xl text-[10px] font-black uppercase ${
+                      selectedOrder.paymentMethod === method
+                        ? method === 'DEBT'
+                          ? 'bg-red-500 text-white'
+                          : 'bg-indigo-500 text-white'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {method === 'CASH' ? 'Наличные' : method === 'CARD' ? 'Карта' : 'В долг'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Кнопки действий */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setIsEditing(false)}
+                className="flex-1 py-3 text-slate-500 font-black text-[10px] uppercase rounded-2xl border border-slate-200"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={() => {
+                  // Обновляем заказ в списке
+                  onUpdateOrder(selectedOrder);
+                  // Подтверждаем продажу
+                  onConfirmOrder(selectedOrder);
+                  setIsEditing(false);
+                  setSelectedOrder(null);
+                }}
+                className="flex-1 bg-indigo-600 text-white py-3 rounded-2xl font-black text-[10px] uppercase shadow-lg"
+              >
+                Выдать заказ
+              </button>
             </div>
           </div>
         </div>

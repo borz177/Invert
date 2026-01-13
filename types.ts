@@ -54,6 +54,7 @@ export interface Order {
   status: 'NEW' | 'ACCEPTED' | 'CONFIRMED' | 'CANCELLED';
   date: string;
   note?: string;
+  paymentMethod?: 'CASH' | 'CARD' | 'DEBT';
 }
 
 export interface Employee {
