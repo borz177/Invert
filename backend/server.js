@@ -109,6 +109,32 @@ app.post('/api/shops/search', async (req, res) => {
   }
 });
 
+// Получить ВСЕ публичные магазины (для ClientPortal по publicToken)
+app.get('/api/shops/all', async (req, res) => {
+  try {
+    const shopsData = await pool.query(
+      `SELECT u.id, u.name as ownerName, s.data as settings 
+       FROM users u 
+       JOIN app_store s ON u.id = s.user_id 
+       WHERE u.role = 'admin' 
+         AND s.key = 'settings' 
+         AND (s.data->>'isPublic')::boolean = true`
+    );
+
+    const result = shopsData.rows.map(row => ({
+      id: row.id,
+      shopName: row.settings.shopName || 'Без названия',
+      ownerName: row.ownerName,
+      settings: row.settings // ← передаём весь объект settings
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error('Ошибка /api/shops/all:', err);
+    res.status(500).json({ error: 'Ошибка при загрузке магазинов' });
+  }
+});
+
 app.post('/api/auth/update-profile', async (req, res) => {
   const { userId, name, currentPassword, newPassword } = req.body;
   if (!userId) return res.status(400).json({ error: 'User ID is required' });

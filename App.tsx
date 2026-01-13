@@ -288,16 +288,25 @@ const App: React.FC = () => {
   const renderView = () => {
     if (!currentUser) return null;
     if (isClient && view !== 'PROFILE') {
-      return <ClientPortal
-        user={currentUser}
-        products={products}
-        sales={sales}
-        orders={orders}
-        onAddOrder={(o) => setOrders(prev => [o, ...prev])}
-        onActiveShopChange={setActiveClientShopName}
-        initialShopId={publicShopId}
-      />;
-    }
+  // Для публичного магазина — НЕ передавать глобальные данные
+  if (publicShopId) {
+    return <ClientPortal
+      user={currentUser}
+      initialShopId={publicShopId}
+      // ❌ НЕ передаём products, sales, orders, customers
+    />;
+  }
+  // Для авторизованного клиента — передаём всё
+  return <ClientPortal
+    user={currentUser}
+    products={products}
+    sales={sales}
+    orders={orders}
+    customers={customers}
+    onAddOrder={(o) => setOrders(prev => [o, ...prev])}
+    onActiveShopChange={setActiveClientShopName}
+  />;
+}
     // ... остальной рендер без изменений ...
     switch (view) {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={setView} orderCount={orders.filter(o => o.status === 'NEW').length}/>;
