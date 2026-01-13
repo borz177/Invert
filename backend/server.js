@@ -118,14 +118,14 @@ app.get('/api/shops/all', async (req, res) => {
        JOIN app_store s ON u.id = s.user_id 
        WHERE u.role = 'admin' 
          AND s.key = 'settings' 
-         AND (s.data->>'isPublic')::boolean = true`
+         AND (s.data->>'isPublic') = 'true'` // ← ИСПРАВЛЕНО
     );
 
     const result = shopsData.rows.map(row => ({
       id: row.id,
       shopName: row.settings.shopName || 'Без названия',
       ownerName: row.ownerName,
-      settings: row.settings // ← передаём весь объект settings
+      settings: row.settings
     }));
 
     res.json(result);
