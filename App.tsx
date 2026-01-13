@@ -157,7 +157,7 @@ const App: React.FC = () => {
   };
 
   const handleConfirmOrder = (order: Order) => {
-  // 1. Списываем товары со склада
+  // 1. Списываем товары
   setProducts(prev => prev.map(p => {
     const it = order.items.find(x => x.productId === p.id);
     return (it && p.type !== 'SERVICE')
@@ -165,7 +165,7 @@ const App: React.FC = () => {
       : p;
   }));
 
-  // 2. Определяем клиента: если в заказе есть примечание [Имя:...], создаём нового
+  // 2. Обработка клиента (как в предыдущем ответе)
   let finalCustomerId = order.customerId;
   let updatedCustomers = [...customers];
 
@@ -175,13 +175,11 @@ const App: React.FC = () => {
     const name = matchName ? matchName[1].trim() : 'Новый клиент';
     const phone = matchPhone ? matchPhone[1].trim() : '';
 
-    // Ищем существующего клиента по телефону или ID
     const existing = customers.find(c =>
       (phone && c.phone === phone) || (c.id === order.customerId)
     );
 
     if (!existing) {
-      // Создаём нового клиента БЕЗ долга (долг добавим ниже, если нужно)
       const newCust: Customer = {
         id: `CUST-${Date.now()}`,
         name,
@@ -196,7 +194,7 @@ const App: React.FC = () => {
     }
   }
 
-  // 3. Увеличиваем долг ТОЛЬКО если оплата "в долг"
+  // 3. Долг — только если в долг
   if (order.paymentMethod === 'DEBT' && finalCustomerId) {
     updatedCustomers = updatedCustomers.map(c =>
       c.id === finalCustomerId
@@ -219,7 +217,21 @@ const App: React.FC = () => {
     customerId: finalCustomerId
   };
 
-  // 5. Обновляем заказ и состояние
+  // 5. Добавляем запись в кассу, если ОПЛАЧЕНО
+  if (order.paymentMethod !== 'DEBT') {
+    const cashEntry: CashEntry = {
+      id: `CS-${Date.now()}`,
+      amount: order.total,
+      type: 'INCOME',
+      category: 'Продажа',
+      description: `Продажа №${newSale.id.slice(-4)}`,
+      date: newSale.date,
+      employeeId: newSale.employeeId
+    };
+    setCashEntries(prev => [cashEntry, ...prev]);
+  }
+
+  // 6. Обновляем состояние
   setOrders(prev => prev.map(o =>
     o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o
   ));
