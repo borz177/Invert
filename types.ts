@@ -125,7 +125,8 @@ export interface AppSettings {
   lowStockThreshold: number;
   darkMode: boolean;
   isPublic?: boolean; // Виден ли магазин в поиске
-  showProductsToClients?: boolean; // Видны ли товары клиентам
+  showProductsToClients?: boolean;// Видны ли товары клиентам
+  publicToken: string;
 }
 
 export type AppView =

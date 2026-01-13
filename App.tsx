@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, Transaction, Sale, CashEntry, AppView, Supplier, Customer, Employee, AppSettings, User, Order } from './types';
 import { NAV_ITEMS, QUICK_ACTIONS, INITIAL_CATEGORIES } from './constants';
@@ -26,7 +25,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   shopName: 'ИнвентарьПро',
   currency: '₽',
   lowStockThreshold: 5,
-  darkMode: false
+  darkMode: false,
+  publicToken: '' // ← добавлено
 };
 
 const App: React.FC = () => {
@@ -73,7 +73,7 @@ const App: React.FC = () => {
     setIsAuthenticated(false);
     localStorage.removeItem('currentUser');
     setPublicShopId(null);
-    window.history.replaceState({}, '', window.location.pathname);
+    window.history.replaceState({}, '', '/');
     setView('DASHBOARD');
   };
 
@@ -81,7 +81,7 @@ const App: React.FC = () => {
     setCurrentUser(null);
     setIsAuthenticated(false);
     setPublicShopId(null);
-    window.history.replaceState({}, '', window.location.pathname);
+    window.history.replaceState({}, '', '/');
   };
 
   const fetchAllData = async (silent = false) => {
@@ -104,32 +104,44 @@ const App: React.FC = () => {
       if (Array.isArray(emp)) setEmployees(emp);
       if (Array.isArray(cats) && cats.length) setCategories(cats);
       if (Array.isArray(ords)) setOrders(ords);
-      if (sett && sett.shopName) setSettings(sett);
+      if (sett && sett.shopName) {
+        // Генерируем publicToken при первом запуске
+        if (!sett.publicToken) {
+          const newToken = 'inv-' + Math.random().toString(36).substr(2, 8);
+          sett.publicToken = newToken;
+          db.saveData('settings', sett);
+        }
+        setSettings(sett);
+      }
       isDataLoaded.current = true;
       setSyncStatus('IDLE');
     } catch (e) { setSyncStatus('ERROR'); } finally { setIsLoading(false); }
   };
 
   useEffect(() => {
-    const checkPublicAndAuth = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const sId = urlParams.get('shop');
+    const initApp = async () => {
+      const path = window.location.pathname;
 
-      if (sId) {
-        setPublicShopId(sId);
-        let guestId = localStorage.getItem('inventory_guest_id');
-        if (!guestId) {
-          guestId = 'GUEST-' + Math.random().toString(36).substr(2, 9);
-          localStorage.setItem('inventory_guest_id', guestId);
+      // Обработка публичной ссылки: /shop/токен
+      if (path.startsWith('/shop/')) {
+        const token = path.split('/shop/')[1];
+        if (token) {
+          setPublicShopId(token);
+          let guestId = localStorage.getItem('inventory_guest_id');
+          if (!guestId) {
+            guestId = 'GUEST-' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('inventory_guest_id', guestId);
+          }
+          const guest: User = { id: guestId, name: 'Гость', role: 'client', email: '' };
+          setCurrentUser(guest);
+          setIsAuthenticated(true);
+          setView('CLIENT_PORTAL');
+          setIsLoading(false);
+          return;
         }
-        const guest: User = { id: guestId, name: 'Гость', role: 'client', email: '' };
-        setCurrentUser(guest);
-        setIsAuthenticated(true);
-        setView('CLIENT_PORTAL');
-        setIsLoading(false);
-        return;
       }
 
+      // Обычный вход
       const userJson = localStorage.getItem('currentUser');
       if (userJson) {
         try {
@@ -141,7 +153,7 @@ const App: React.FC = () => {
       }
       setIsLoading(false);
     };
-    checkPublicAndAuth();
+    initApp();
   }, []);
 
   useEffect(() => { if (isAuthenticated && !publicShopId) fetchAllData(); }, [isAuthenticated, currentUser?.ownerId]);
@@ -180,53 +192,55 @@ const App: React.FC = () => {
       return updated;
     });
 
-    // 2. Логика сохранения клиента (постоянного или гостя) в базу продавца
-let finalCustomerId = order.customerId;
-let name = 'Новый клиент';
-let phone = '';
+    // 2. Извлечение данных клиента
+    let finalCustomerId = order.customerId;
+    let name = 'Новый клиент';
+    let phone = '';
 
-// Извлекаем данные из примечания, если есть
-if (order.note && order.note.includes('[Имя:')) {
-  const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
-  const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
-  name = matchName ? matchName[1].trim() : name;
-  phone = matchPhone ? matchPhone[1].trim() : '';
-}
+    if (order.note && order.note.includes('[Имя:')) {
+      const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
+      const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
+      name = matchName ? matchName[1].trim() : name;
+      phone = matchPhone ? matchPhone[1].trim() : '';
+    }
 
-setCustomers(prev => {
-  // Ищем клиента по ID или телефону
-  const existing = prev.find(c =>
-    c.id === order.customerId ||
-    (phone && c.phone === phone)
-  );
+    // 3. Проверка уникальности телефона
+    if (phone && customers.some(c => c.phone === phone)) {
+      alert('Клиент с таким номером телефона уже существует. Заказ не может быть создан.');
+      return;
+    }
 
-  if (!existing) {
-    // Создаём нового клиента
-    const newCust: Customer = {
-      id: order.customerId.startsWith('GUEST-') ? `CUST-${Date.now()}` : order.customerId,
-      name,
-      phone,
-      debt: order.paymentMethod === 'DEBT' ? order.total : 0,
-      discount: 0
-    };
-    finalCustomerId = newCust.id;
-    const updated = [newCust, ...prev];
-    db.saveData('customers', updated);
-    return updated;
-  } else {
-    // Обновляем долг существующего клиента
-    finalCustomerId = existing.id;
-    const updated = prev.map(c =>
-      c.id === existing.id
-        ? { ...c, debt: (Number(c.debt) || 0) + (order.paymentMethod === 'DEBT' ? order.total : 0) }
-        : c
-    );
-    db.saveData('customers', updated);
-    return updated;
-  }
-});
+    setCustomers(prev => {
+      const existing = prev.find(c =>
+        c.id === order.customerId ||
+        (phone && c.phone === phone)
+      );
 
-    // 3. Создание продажи
+      if (!existing) {
+        const newCust: Customer = {
+          id: order.customerId.startsWith('GUEST-') ? `CUST-${Date.now()}` : order.customerId,
+          name,
+          phone,
+          debt: order.paymentMethod === 'DEBT' ? order.total : 0,
+          discount: 0
+        };
+        finalCustomerId = newCust.id;
+        const updated = [newCust, ...prev];
+        db.saveData('customers', updated);
+        return updated;
+      } else {
+        finalCustomerId = existing.id;
+        const updated = prev.map(c =>
+          c.id === existing.id
+            ? { ...c, debt: (Number(c.debt) || 0) + (order.paymentMethod === 'DEBT' ? order.total : 0) }
+            : c
+        );
+        db.saveData('customers', updated);
+        return updated;
+      }
+    });
+
+    // 4. Создание продажи
     const newSale: Sale = {
       id: `SALE-ORD-${order.id}`,
       employeeId: currentUser?.id || 'admin',
@@ -237,9 +251,17 @@ setCustomers(prev => {
       customerId: finalCustomerId
     };
 
-    // 4. Запись в кассу если оплачено сразу
+    // 5. Запись в кассу если оплачено сразу
     if (order.paymentMethod !== 'DEBT') {
-      const cashEntry: CashEntry = { id: `CS-${Date.now()}`, amount: order.total, type: 'INCOME', category: 'Продажа', description: `Продажа №${newSale.id.slice(-4)}`, date: newSale.date, employeeId: newSale.employeeId };
+      const cashEntry: CashEntry = {
+        id: `CS-${Date.now()}`,
+        amount: order.total,
+        type: 'INCOME',
+        category: 'Продажа',
+        description: `Продажа №${newSale.id.slice(-4)}`,
+        date: newSale.date,
+        employeeId: newSale.employeeId
+      };
       setCashEntries(prev => {
         const updated = [cashEntry, ...prev];
         db.saveData('cashEntries', updated);
@@ -247,7 +269,7 @@ setCustomers(prev => {
       });
     }
 
-    // 5. Обновление статуса заказа
+    // 6. Обновление статуса заказа
     setOrders(prev => {
       const updated: Order[] = prev.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o);
       db.saveData('orders', updated);
@@ -266,8 +288,17 @@ setCustomers(prev => {
   const renderView = () => {
     if (!currentUser) return null;
     if (isClient && view !== 'PROFILE') {
-      return <ClientPortal user={currentUser} products={products} sales={sales} orders={orders} onAddOrder={(o) => setOrders(prev => [o, ...prev])} onActiveShopChange={setActiveClientShopName} initialShopId={publicShopId} />;
+      return <ClientPortal
+        user={currentUser}
+        products={products}
+        sales={sales}
+        orders={orders}
+        onAddOrder={(o) => setOrders(prev => [o, ...prev])}
+        onActiveShopChange={setActiveClientShopName}
+        initialShopId={publicShopId}
+      />;
     }
+    // ... остальной рендер без изменений ...
     switch (view) {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={setView} orderCount={orders.filter(o => o.status === 'NEW').length}/>;
       case 'PRODUCTS': return <ProductList products={products} categories={categories} canEdit={true} canCreate={true} canDelete={true} showCost={true}
