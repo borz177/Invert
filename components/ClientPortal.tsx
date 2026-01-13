@@ -97,9 +97,10 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
           // Ищем магазин по publicToken
           const allShops = await db.shops.getAll(); // ← должен быть такой метод
           const targetShop = allShops.find(s => s.settings?.publicToken === activeShopId);
+
+
           if (!targetShop) throw new Error('Магазин не найден');
-          if (!targetShop.settings?.isPublic) throw new Error('Магазин закрыт');
-          shopInternalId = targetShop.id;
+          shopUserId = targetShop.id;
         }
 
         const [p, s, o, c, sett, customers] = await Promise.all([

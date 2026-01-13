@@ -13,7 +13,9 @@ interface SettingsProps {
 const Settings: React.FC<SettingsProps> = ({ settings, onUpdate, onClear, isOwner, userId }) => {
   const [copied, setCopied] = useState(false);
 
-  const shopUrl = `${window.location.origin}${window.location.pathname}?shop=${userId}`;
+  const shopUrl = settings?.publicToken
+  ? `${window.location.origin}/shop/${settings.publicToken}`
+  : `${window.location.origin}/shop/generating...`;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(shopUrl);
