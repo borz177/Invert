@@ -4,9 +4,7 @@ import { Product, Transaction, Sale, CashEntry, Supplier, Customer, Employee, Us
 const getApiUrl = () => {
   const { protocol, hostname, port } = window.location;
   if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('preview') || hostname.includes('webcontainer')) {
-    if (port !== '3001') {
-      return `${protocol}//${hostname}:3001/api`;
-    }
+    if (port !== '3001') return `${protocol}//${hostname}:3001/api`;
   }
   return '/api';
 };
@@ -61,6 +59,33 @@ export const db = {
     }
   },
 
+  admin: {
+    async getAllUsers(): Promise<User[]> {
+      const userJson = localStorage.getItem('currentUser');
+      if (!userJson) return [];
+      const user = JSON.parse(userJson);
+      const res = await fetchWithTimeout(`${API_BASE}/admin/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: user.id })
+      });
+      if (!res.ok) return [];
+      return await res.json();
+    },
+    async getPlatformStats(): Promise<any> {
+      const userJson = localStorage.getItem('currentUser');
+      if (!userJson) return null;
+      const user = JSON.parse(userJson);
+      const res = await fetchWithTimeout(`${API_BASE}/admin/stats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: user.id })
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    }
+  },
+
   shops: {
     async search(query: string): Promise<any[]> {
       const res = await fetchWithTimeout(`${API_BASE}/shops/search`, {
@@ -73,23 +98,17 @@ export const db = {
     }
   },
 
-
   async getData(key: string) {
     const userJson = localStorage.getItem('currentUser');
     if (!userJson) return null;
-    const user: User & { ownerId?: string } = JSON.parse(userJson);
+    const user = JSON.parse(userJson);
     const targetUserId = user.ownerId || user.id;
-
     try {
       const response = await fetchWithTimeout(`${API_BASE}/data`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, user_id: targetUserId })
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       localStorage.setItem(`cache_${targetUserId}_${key}`, JSON.stringify(data));
       return data;
@@ -99,7 +118,6 @@ export const db = {
     }
   },
 
-  // Получение данных из контекста ЧУЖОГО магазина (для клиентов)
   async getDataOfShop(shopOwnerId: string, key: string) {
     try {
       const response = await fetchWithTimeout(`${API_BASE}/data`, {
@@ -109,9 +127,7 @@ export const db = {
       });
       if (!response.ok) return null;
       return await response.json();
-    } catch (e) {
-      return null;
-    }
+    } catch (e) { return null; }
   },
 
   async saveDataOfShop(shopOwnerId: string, key: string, data: any) {
@@ -122,19 +138,15 @@ export const db = {
         body: JSON.stringify({ key, data, user_id: shopOwnerId })
       });
       return true;
-    } catch (e) {
-      return false;
-    }
+    } catch (e) { return false; }
   },
 
   async saveData(key: string, data: any) {
     const userJson = localStorage.getItem('currentUser');
     if (!userJson) return false;
-    const user: User & { ownerId?: string } = JSON.parse(userJson);
+    const user = JSON.parse(userJson);
     const targetUserId = user.ownerId || user.id;
-
     localStorage.setItem(`cache_${targetUserId}_${key}`, JSON.stringify(data));
-
     try {
       const response = await fetchWithTimeout(`${API_BASE}/data/save`, {
         method: 'POST',
@@ -142,8 +154,6 @@ export const db = {
         body: JSON.stringify({ key, data, user_id: targetUserId })
       });
       return response.ok;
-    } catch (e) {
-      return false;
-    }
+    } catch (e) { return false; }
   }
 };

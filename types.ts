@@ -3,10 +3,11 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'user' | 'кассир' | 'менеджер' | 'кладовщик' | 'управляющий' | 'client';
+  role: 'admin' | 'user' | 'кассир' | 'менеджер' | 'кладовщик' | 'управляющий' | 'client' | 'superadmin';
   ownerId?: string;
   permissions?: any;
-  linkedShopIds?: string[]; // Для клиентов: список ID магазинов
+  linkedShopIds?: string[];
+  createdAt?: string;
 }
 
 export interface Product {
@@ -20,7 +21,7 @@ export interface Product {
   minStock: number;
   unit: 'шт' | 'кг' | 'упак' | 'ящик' | 'л' | 'мл';
   image?: string;
-  type?: 'PRODUCT' | 'SERVICE'; // PRODUCT - списывается со склада, SERVICE - нет
+  type?: 'PRODUCT' | 'SERVICE';
   description?: string;
 }
 
@@ -88,7 +89,7 @@ export interface Transaction {
   pricePerUnit?: number;
   paymentMethod?: 'CASH' | 'DEBT';
   isDeleted?: boolean;
-  batchId?: string; // ID документа прихода для группировки
+  batchId?: string;
 }
 
 export interface Sale {
@@ -124,9 +125,8 @@ export interface AppSettings {
   currency: string;
   lowStockThreshold: number;
   darkMode: boolean;
-  isPublic?: boolean; // Виден ли магазин в поиске
-  showProductsToClients?: boolean;// Видны ли товары клиентам
-
+  isPublic?: boolean;
+  showProductsToClients?: boolean;
 }
 
 export type AppView =
