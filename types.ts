@@ -87,6 +87,7 @@ export interface Transaction {
   pricePerUnit?: number;
   paymentMethod?: 'CASH' | 'DEBT';
   isDeleted?: boolean;
+  batchId?: string; // ID документа прихода для группировки
 }
 
 export interface Sale {

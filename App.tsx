@@ -321,13 +321,38 @@ const App: React.FC = () => {
         setBatch={setWarehouseBatch}
         onTransaction={t => setTransactions([t, ...transactions])}
         onTransactionsBulk={ts => {
-           // Обновление остатков при приходе
-           const updatedProducts = products.map(p => {
-             const items = ts.filter(t => t.productId === p.id);
-             const addedQty = items.reduce((acc, curr) => acc + curr.quantity, 0);
-             return addedQty > 0 ? { ...p, quantity: p.quantity + addedQty } : p;
+           // Обновление остатков и долгов поставщиков
+           const updatedProducts = [...products];
+           const supplierUpdates: Record<string, number> = {};
+
+           ts.forEach(t => {
+             // 1. Остатки товара
+             const pIdx = updatedProducts.findIndex(p => p.id === t.productId);
+             if (pIdx > -1) {
+               updatedProducts[pIdx] = {
+                 ...updatedProducts[pIdx],
+                 quantity: updatedProducts[pIdx].quantity + t.quantity,
+                 cost: t.pricePerUnit || updatedProducts[pIdx].cost // Обновляем себестоимость по последнему приходу
+               };
+             }
+
+             // 2. Расчет долга если в долг
+             if (t.paymentMethod === 'DEBT' && t.supplierId) {
+               const amount = t.quantity * (t.pricePerUnit || 0);
+               supplierUpdates[t.supplierId] = (supplierUpdates[t.supplierId] || 0) + amount;
+             }
            });
+
+           // 3. Обновляем поставщиков
+           const updatedSuppliers = suppliers.map(s => {
+             if (supplierUpdates[s.id]) {
+               return { ...s, debt: (Number(s.debt) || 0) + supplierUpdates[s.id] };
+             }
+             return s;
+           });
+
            setProducts(updatedProducts);
+           setSuppliers(updatedSuppliers);
            setTransactions([...ts, ...transactions]);
         }}
         onAddCashEntry={handleAddCashEntry}
