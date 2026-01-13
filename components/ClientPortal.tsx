@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, Product, Sale, Order, AppSettings, CashEntry } from '../types';
 import { db } from '../services/api';
@@ -22,6 +21,9 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const [isSearching, setIsSearching] = useState(false);
   const [isShopLoading, setIsShopLoading] = useState(false);
 
+  // 🔹 НОВОЕ: состояние для глобальной загрузки при входе
+  const [initialLoad, setInitialLoad] = useState(true);
+
   const [shopData, setShopData] = useState<{
     products: Product[];
     sales: Sale[];
@@ -42,10 +44,18 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const touchStart = useRef<number>(0);
   const [selectedOpDetail, setSelectedOpDetail] = useState<any | null>(null);
 
+  // 🔹 Загружаем список магазинов и автоматически открываем первый
   useEffect(() => {
     const fetchMyShops = async () => {
       const linked = await db.getData('linkedShops');
-      if (Array.isArray(linked)) setShopList(linked);
+      if (Array.isArray(linked)) {
+        setShopList(linked);
+        // Автоматически открываем первый магазин
+        if (linked.length > 0 && !activeShopId) {
+          setActiveShopId(linked[0].id);
+        }
+      }
+      setInitialLoad(false); // Завершаем начальную загрузку
     };
     fetchMyShops();
   }, []);
@@ -146,18 +156,22 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
 
   const myHistory = useMemo(() => {
     if (!shopData) return [];
+
     const mySales = shopData.sales.filter(x =>
       !x.isDeleted &&
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
     );
+
     const myPayments = shopData.cashEntries.filter(x =>
       x.type === 'INCOME' &&
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
     );
+
     const myOrders = shopData.orders.filter(x =>
       (x.customerId === shopData.customerIdInShop || x.customerId === user.id) &&
       (x.status === 'NEW' || x.status === 'ACCEPTED' || x.status === 'CANCELLED')
     );
+
     return [
       ...mySales.map(i => ({...i, type: 'SALE'})),
       ...myPayments.map(i => ({...i, type: 'PAYMENT'})),
@@ -176,13 +190,32 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
 
   const myStats = useMemo(() => {
     if (!shopData) return { debt: 0, totalPurchased: 0 };
-    const debtSales = shopData.sales.filter(x => !x.isDeleted && x.paymentMethod === 'DEBT' && (x.customerId === shopData.customerIdInShop || x.customerId === user.id));
-    const allSales = shopData.sales.filter(x => !x.isDeleted && (x.customerId === shopData.customerIdInShop || x.customerId === user.id));
-    const payments = shopData.cashEntries.filter(x => x.type === 'INCOME' && x.category !== 'Продажа' && (x.customerId === shopData.customerIdInShop || x.customerId === user.id));
+
+    const debtSales = shopData.sales.filter(x =>
+      !x.isDeleted &&
+      x.paymentMethod === 'DEBT' &&
+      (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
+    );
+
+    const allSales = shopData.sales.filter(x =>
+      !x.isDeleted &&
+      (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
+    );
+
+    const payments = shopData.cashEntries.filter(x =>
+      x.type === 'INCOME' &&
+      x.category !== 'Продажа' &&
+      (x.customerId === shopData.customerIdInShop || x.customerId === user.id)
+    );
+
     const totalDebt = debtSales.reduce((acc, i) => acc + i.total, 0);
     const totalPaid = payments.reduce((acc, i) => acc + i.amount, 0);
     const totalPurchased = allSales.reduce((acc, i) => acc + i.total, 0);
-    return { debt: Math.max(0, totalDebt - totalPaid), totalPurchased };
+
+    return {
+      debt: Math.max(0, totalDebt - totalPaid),
+      totalPurchased
+    };
   }, [shopData, user.id]);
 
   const cartTotal = useMemo(() => cart.reduce((acc, i) => acc + i.price * i.quantity, 0), [cart]);
@@ -190,7 +223,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
   const handleSendOrder = () => {
     if (cart.length === 0 || !activeShopId) return;
     if (!shopData?.customerIdInShop && (!tempName.trim() || !tempPhone.trim())) {
-      alert('Пожалуйста, укажите ваши данные');
+      alert('Пожалуйста, укажите ваше имя и телефон');
       return;
     }
     const newOrder: Order = {
@@ -205,154 +238,223 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, onAddOrder, onUpdateO
     db.saveDataOfShop(activeShopId, 'orders', [newOrder, ...(shopData?.orders || [])]);
     setCart([]);
     setIsOrdering(false);
-    alert('Заказ отправлен!');
+    alert('Заявка отправлена!');
   };
 
-  return (
-    <div className="min-h-full">
-      {/* Моментальный спиннер при переключении магазинов */}
-      {isShopLoading && (
-        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center z-[100] animate-fade-in">
-          <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin shadow-xl"></div>
-          <p className="mt-6 font-black text-indigo-600 uppercase tracking-[0.2em] text-[10px]">Входим в магазин...</p>
+  // 🔹 Показываем спинер при начальной загрузке ИЛИ при загрузке магазина
+  if (initialLoad || (activeShopId && isShopLoading && !shopData)) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen animate-fade-in">
+        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-sm font-black text-indigo-600 uppercase tracking-widest">Загрузка магазина...</p>
+      </div>
+    );
+  }
+
+  if (activeShopId && shopData) {
+    return (
+      <div className="space-y-6 animate-fade-in pb-32">
+        <div className="flex bg-white p-2 rounded-[32px] shadow-sm border border-slate-50">
+          <button type="button" onClick={() => setTab('PRODUCTS')} className={`flex-1 py-4 rounded-[28px] text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'PRODUCTS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400'}`}>Заказать</button>
+          <button type="button" onClick={() => setTab('HISTORY')} className={`flex-1 py-4 rounded-[28px] text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'HISTORY' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400'}`}>История</button>
         </div>
-      )}
 
-      {!activeShopId ? (
-        <div className="space-y-8 animate-fade-in pb-20">
-          <div className="space-y-4">
-            <h2 className="text-2xl font-black text-slate-800 px-2">Поиск магазина</h2>
-            <div className="relative"><i className="fas fa-search absolute left-6 top-1/2 -translate-y-1/2 text-slate-300"></i>
-              <input type="text" className="w-full p-6 pl-14 bg-white rounded-[32px] shadow-sm border border-slate-100 outline-none text-sm placeholder:text-slate-300" placeholder="Название..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+        {tab === 'PRODUCTS' ? (
+          <div className="space-y-6">
+            <div className="relative">
+              <i className="fas fa-search absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"></i>
+              <input type="text" className="w-full p-5 pl-14 bg-white rounded-[24px] shadow-sm border border-slate-100 outline-none text-sm placeholder:text-slate-300" placeholder="Поиск товаров..." value={productSearch} onChange={e => setProductSearch(e.target.value)} />
             </div>
-            {isSearching && <div className="text-center py-6 font-bold text-indigo-400 animate-pulse">Поиск...</div>}
-            <div className="space-y-3">
-              {searchResults.map(shop => (
-                <div key={shop.id} className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 flex justify-between items-center transition-all">
-                  <div className="flex items-center gap-5"><div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl shadow-inner"><i className="fas fa-store"></i></div><div><p className="font-black text-slate-800">{shop.shopName}</p><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Владелец: {shop.ownerName}</p></div></div>
-                  <button type="button" onClick={() => addShop(shop)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">Добавить</button>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-4">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-2">Ваши магазины</h3>
-            <div className="grid grid-cols-1 gap-4 overflow-hidden">
-              {shopList.map(shop => (
-                <div key={shop.id} className="relative overflow-hidden rounded-[40px] bg-red-500" onTouchStart={(e) => handleTouchStart(e, shop.id)} onTouchMove={(e) => handleTouchMove(e, shop.id)}>
-                  <button type="button" onClick={() => removeShop(shop.id)} className="absolute right-0 top-0 bottom-0 w-24 bg-red-500 text-white font-black uppercase text-[10px] flex items-center justify-center">Удалить</button>
-                  <button type="button" onClick={() => swipeId === shop.id ? setSwipeId(null) : setActiveShopId(shop.id)} style={{ transform: swipeId === shop.id ? 'translateX(-96px)' : 'translateX(0)' }} className="relative w-full bg-white p-7 shadow-sm border border-slate-50 flex items-center gap-6 transition-transform duration-300 text-left active:bg-slate-50">
-                    <div className="w-16 h-16 bg-indigo-600 text-white rounded-[24px] flex items-center justify-center text-3xl shadow-lg"><i className="fas fa-store"></i></div>
-                    <div className="flex-1"><p className="text-lg font-black text-slate-800 leading-tight">{shop.shopName}</p><p className="text-xs text-slate-400 font-bold uppercase mt-1">Нажмите для входа</p></div>
-                    <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-slate-300"><i className="fas fa-chevron-right text-xs"></i></div>
-                  </button>
-                </div>
-              ))}
-              {shopList.length === 0 && searchQuery === '' && <div className="text-center py-24 text-slate-300 italic">Нет добавленных магазинов</div>}
-            </div>
-          </div>
-        </div>
-      ) : (
-        shopData && (
-          <div className="space-y-6 animate-fade-in pb-32">
-            <div className="flex bg-white p-2 rounded-[32px] shadow-sm border border-slate-50">
-              <button type="button" onClick={() => setTab('PRODUCTS')} className={`flex-1 py-4 rounded-[28px] text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'PRODUCTS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400'}`}>Заказать</button>
-              <button type="button" onClick={() => setTab('HISTORY')} className={`flex-1 py-4 rounded-[28px] text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'HISTORY' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400'}`}>История</button>
-            </div>
-
-            {tab === 'PRODUCTS' ? (
-              <div className="space-y-6">
-                <div className="relative">
-                  <i className="fas fa-search absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"></i>
-                  <input type="text" className="w-full p-5 pl-14 bg-white rounded-[24px] shadow-sm border border-slate-100 outline-none text-sm placeholder:text-slate-300" placeholder="Поиск..." value={productSearch} onChange={e => setProductSearch(e.target.value)} />
-                </div>
-                {shopData.settings.showProductsToClients ? (
-                  <div className="grid grid-cols-2 gap-4">
-                    {filteredProducts.map(p => (
-                      <div key={p.id} className="bg-white p-5 rounded-[40px] shadow-sm border border-slate-50 flex flex-col relative">
-                        <span className="absolute top-4 left-5 text-[8px] font-black text-indigo-400 uppercase bg-indigo-50 px-2 py-1 rounded-full">{p.category}</span>
-                        <div className="aspect-square bg-slate-50 rounded-[32px] mb-4 overflow-hidden flex items-center justify-center p-2">
-                          {p.image ? <img src={p.image} className="w-full h-full object-contain" /> : <i className="fas fa-image text-4xl text-slate-100"></i>}
-                        </div>
-                        <div className="space-y-1 mb-4">
-                          <p className="font-bold text-slate-800 text-sm leading-tight line-clamp-2">{p.name}</p>
-                          <p className="text-[10px] text-slate-400 font-bold">{p.price.toLocaleString()} ₽</p>
-                        </div>
-                        <button type="button" onClick={() => {
-                          const ex = cart.find(i => i.productId === p.id);
-                          if (ex) setCart(cart.map(i => i.productId === p.id ? {...i, quantity: i.quantity + 1} : i));
-                          else setCart([...cart, { productId: p.id, name: p.name, price: p.price, quantity: 1, unit: p.unit }]);
-                        }} className="w-full py-3 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg active:scale-95">В корзину</button>
-                      </div>
-                    ))}
-                  </div>
-                ) : <div className="p-20 text-center text-slate-300">Витрина скрыта</div>}
-
-                {cart.length > 0 && (
-                  <button type="button" onClick={() => setIsOrdering(true)} className="fixed bottom-24 left-4 right-4 bg-indigo-600 text-white p-6 rounded-[32px] flex justify-between items-center shadow-2xl z-50 animate-slide-up">
-                    <div className="flex items-center gap-4"><div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center font-black">{cart.length}</div><div className="text-left"><p className="text-[10px] opacity-60 uppercase font-black">Сумма</p><p className="text-lg font-black">{cartTotal.toLocaleString()} ₽</p></div></div>
-                    <div className="flex items-center gap-2"><span className="font-black uppercase text-[10px]">Оформить</span><i className="fas fa-chevron-right text-[10px]"></i></div>
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-6 animate-fade-in">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-red-50 p-6 rounded-[32px] border border-red-100 text-center"><p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Ваш долг</p><p className="text-2xl font-black text-red-600">{myStats.debt.toLocaleString()} ₽</p></div>
-                  <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 text-center"><p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Всего покупок</p><p className="text-2xl font-black text-indigo-600">{myStats.totalPurchased.toLocaleString()} ₽</p></div>
-                </div>
-                <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-50">
-                  {myHistory.map((op: any) => (
-                    <div key={op.id} onClick={() => setSelectedOpDetail(op)} className="p-5 flex justify-between items-center active:bg-slate-50 cursor-pointer">
-                      <div className="min-w-0 flex-1 pr-4">
-                        <div className="font-bold text-slate-800 text-sm">{op.type === 'SALE' ? `Покупка №${op.id.slice(-4)}` : op.type === 'PAYMENT' ? 'Оплата' : 'Заявка'}</div>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p>
-                      </div>
-                      <p className={`font-black text-lg ${op.type === 'PAYMENT' ? 'text-emerald-500' : 'text-slate-800'}`}>
-                        {(op.amount || op.total).toLocaleString()} ₽
-                      </p>
+            {shopData.settings.showProductsToClients ? (
+              <div className="grid grid-cols-2 gap-4">
+                {filteredProducts.map(p => (
+                  <div key={p.id} className="bg-white p-5 rounded-[40px] shadow-sm border border-slate-50 flex flex-col relative">
+                    <span className="absolute top-4 left-5 text-[8px] font-black text-indigo-400 uppercase bg-indigo-50 px-2 py-1 rounded-full">{p.category}</span>
+                    <div className="aspect-square bg-slate-50 rounded-[32px] mb-4 overflow-hidden flex items-center justify-center p-2">
+                      {p.image ? <img src={p.image} className="w-full h-full object-contain" /> : <i className="fas fa-image text-4xl text-slate-100"></i>}
                     </div>
-                  ))}
-                  {myHistory.length === 0 && <p className="text-center py-20 text-slate-300 italic">История пуста</p>}
-                </div>
-              </div>
-            )}
-
-            {/* Детализация заказа/продажи */}
-            {selectedOpDetail && (
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-end justify-center p-0" onClick={() => setSelectedOpDetail(null)}>
-                <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
-                   <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-xl font-black text-slate-800">Детали</h3>
-                    <button type="button" onClick={() => setSelectedOpDetail(null)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times"></i></button>
-                   </div>
-                   {/* ... детализация ... */}
-                   <button type="button" onClick={() => setSelectedOpDetail(null)} className="mt-8 w-full py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Закрыть</button>
-                </div>
-              </div>
-            )}
-
-            {isOrdering && (
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-end justify-center" onClick={() => setIsOrdering(false)}>
-                <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[95vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
-                  <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-black text-slate-800">Заказ</h3></div><button type="button" onClick={() => setIsOrdering(false)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full"><i className="fas fa-times"></i></button></div>
-                  <div className="space-y-3 mb-6">
-                    {cart.map(item => (
-                      <div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <div><p className="font-bold text-slate-800 text-sm">{item.name}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit} x {item.price} ₽</p></div>
-                        <button type="button" onClick={() => setCart(cart.filter(i=>i.productId!==item.productId))} className="text-red-300 p-2"><i className="fas fa-trash-alt"></i></button>
-                      </div>
-                    ))}
+                    <div className="space-y-1 mb-4">
+                      <p className="font-bold text-slate-800 text-sm leading-tight line-clamp-2">{p.name}</p>
+                      <p className="text-[10px] text-slate-400 font-bold">Ост: {p.quantity} {p.unit}</p>
+                    </div>
+                    <div className="flex justify-between items-center mt-auto">
+                      <span className="font-black text-slate-800 text-lg">{p.price.toLocaleString()} ₽</span>
+                      <button type="button" onClick={() => {
+                        const ex = cart.find(i => i.productId === p.id);
+                        if (ex) setCart(cart.map(i => i.productId === p.id ? {...i, quantity: i.quantity + 1} : i));
+                        else setCart([...cart, { productId: p.id, name: p.name, price: p.price, quantity: 1, unit: p.unit }]);
+                      }} className="w-10 h-10 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg active:scale-95"><i className="fas fa-plus text-xs"></i></button>
+                    </div>
                   </div>
-                  <button type="button" onClick={handleSendOrder} className="w-full bg-indigo-600 text-white p-6 rounded-[28px] font-black uppercase shadow-xl tracking-widest active:scale-95">Отправить заказ</button>
-                </div>
+                ))}
+                {filteredProducts.length === 0 && <div className="col-span-2 text-center py-10 text-slate-300 italic">Ничего не найдено</div>}
               </div>
-            )}
+            ) : <div className="p-20 text-center text-slate-300">Витрина скрыта</div>}
 
-            <button onClick={() => setActiveShopId(null)} className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-indigo-500">Вернуться к списку магазинов</button>
+            {cart.length > 0 && (
+              <button type="button" onClick={() => setIsOrdering(true)} className="fixed bottom-24 left-4 right-4 bg-indigo-600 text-white p-6 rounded-[32px] flex justify-between items-center shadow-2xl z-50 animate-slide-up">
+                <div className="flex items-center gap-4"><div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center font-black">{cart.length}</div><div className="text-left"><p className="text-[10px] opacity-60 uppercase font-black">Заказ</p><p className="text-lg font-black">{cartTotal.toLocaleString()} ₽</p></div></div>
+                <div className="flex items-center gap-2"><span className="font-black uppercase text-[10px]">Оформить</span><i className="fas fa-chevron-right text-[10px]"></i></div>
+              </button>
+            )}
           </div>
-        )
-      )}
+        ) : (
+          <div className="space-y-6 animate-fade-in">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-red-50 p-6 rounded-[32px] border border-red-100 text-center"><p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Долг</p><p className="text-2xl font-black text-red-600">{myStats.debt.toLocaleString()} ₽</p></div>
+              <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 text-center"><p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Закупок на сумму</p><p className="text-2xl font-black text-indigo-600">{myStats.totalPurchased.toLocaleString()} ₽</p></div>
+            </div>
+            <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-50">
+              <p className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50">Ваши операции</p>
+              {myHistory.map((op: any) => (
+                <div key={op.id} onClick={() => setSelectedOpDetail(op)} className="p-5 flex justify-between items-center active:bg-slate-50 cursor-pointer">
+                  <div className="min-w-0 flex-1 pr-4">
+                    <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                      {op.type === 'SALE' ? (
+                          <>
+                            Покупка №{op.id.slice(-4)}
+                            {op.paymentMethod === 'DEBT' ? (
+                                <span
+                                    className="text-[8px] font-black bg-red-50 text-red-500 px-1.5 py-0.5 rounded uppercase">в долг</span>
+                            ) : (
+                                <span
+                                    className="text-[8px] font-black bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded uppercase">оплачено</span>
+                            )}
+                          </>
+                      ) : op.type === 'PAYMENT' ? (
+                          'Платёж'
+                      ) : (
+                          'Заявка'
+                      )}
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p>
+                    {op.type === 'ORDER' && (
+                        <span
+                            className={`text-[8px] font-black uppercase inline-block px-1.5 py-0.5 rounded mt-1 ${op.status === 'NEW' ? 'bg-indigo-50 text-indigo-500' : op.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-400'}`}>
+                        {op.status === 'NEW' ? 'В обработке' : op.status === 'ACCEPTED' ? 'Принята' : 'Отменена'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <p className={`font-black text-lg ${op.type === 'PAYMENT' ? 'text-emerald-500' : 'text-slate-800'}`}>
+                      {op.type === 'PAYMENT' ? '-' : ''}{(op.amount || op.total).toLocaleString()} ₽
+                    </p>
+                    <i className="fas fa-chevron-right text-[10px] text-slate-200"></i>
+                  </div>
+                </div>
+              ))}
+              {myHistory.length === 0 && <p className="text-center py-20 text-slate-300 italic">Событий нет</p>}
+            </div>
+          </div>
+        )}
+
+        {selectedOpDetail && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-end justify-center p-0" onClick={() => setSelectedOpDetail(null)}>
+            <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
+               <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-xl font-black text-slate-800">
+                    {selectedOpDetail.type === 'SALE' ? 'Детали покупки' : selectedOpDetail.type === 'PAYMENT' ? 'Детали платежа' : 'Детали заявки'}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-black uppercase">№ {selectedOpDetail.id.slice(-6)} • {new Date(selectedOpDetail.date).toLocaleDateString()}</p>
+                </div>
+                <button type="button" onClick={() => setSelectedOpDetail(null)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times"></i></button>
+               </div>
+
+               {(selectedOpDetail.type === 'SALE' || selectedOpDetail.type === 'ORDER') ? (
+                 <div className="space-y-4">
+                    <div className="space-y-2">
+                       {selectedOpDetail.items.map((item: any, idx: number) => {
+                         const p = shopData.products.find(prod => prod.id === item.productId);
+                         return (
+                           <div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                             <div>
+                               <p className="font-bold text-slate-800 text-sm">{p?.name || 'Товар'}</p>
+                               <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {p?.unit || 'шт'} x {item.price} ₽</p>
+                             </div>
+                             <p className="font-black text-slate-800">{(item.quantity * item.price).toLocaleString()} ₽</p>
+                           </div>
+                         );
+                       })}
+                    </div>
+                    <div className="bg-slate-800 p-6 rounded-[32px] text-white flex justify-between items-center mt-4">
+                      <span className="text-[10px] font-black uppercase opacity-60">Итого:</span>
+                      <span className="text-2xl font-black">{selectedOpDetail.total.toLocaleString()} ₽</span>
+                    </div>
+                 </div>
+               ) : (
+                 <div className="bg-emerald-50 p-8 rounded-[40px] border border-emerald-100 text-center">
+                    <p className="text-[10px] font-black text-emerald-400 uppercase mb-2">Сумма оплаты</p>
+                    <p className="text-4xl font-black text-emerald-600">{selectedOpDetail.amount.toLocaleString()} ₽</p>
+                 </div>
+               )}
+               <button type="button" onClick={() => setSelectedOpDetail(null)} className="mt-8 w-full py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Закрыть</button>
+            </div>
+          </div>
+        )}
+
+        {isOrdering && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-end justify-center">
+            <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[95vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-black text-slate-800">Оформление</h3><p className="text-xs text-slate-400 font-bold">Заявка на покупку</p></div><button type="button" onClick={() => setIsOrdering(false)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full"><i className="fas fa-times"></i></button></div>
+              {!shopData?.customerIdInShop && (
+                <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 mb-6 space-y-4">
+                  <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center">Ваши данные для связи</p>
+                  <input className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold" placeholder="Имя" value={tempName} onChange={e => setTempName(e.target.value)} />
+                  <input className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold" placeholder="Телефон" type="tel" value={tempPhone} onChange={e => setTempPhone(e.target.value)} />
+                </div>
+              )}
+              <div className="space-y-3 mb-6">
+                {cart.map(item => (
+                  <div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div><p className="font-bold text-slate-800 text-sm">{item.name}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit} x {item.price} ₽</p></div>
+                    <button type="button" onClick={() => setCart(cart.filter(i=>i.productId!==item.productId))} className="text-red-300 p-2"><i className="fas fa-trash-alt"></i></button>
+                  </div>
+                ))}
+              </div>
+              <textarea placeholder="Сообщение продавцу..." className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[24px] text-sm outline-none mb-6 resize-none" rows={2} value={note} onChange={e=>setNote(e.target.value)} />
+              <div className="flex justify-between items-center mb-6 px-2"><span className="text-[10px] font-black text-slate-400 uppercase">Сумма</span><span className="text-2xl font-black text-slate-800">{cartTotal.toLocaleString()} ₽</span></div>
+              <button type="button" onClick={handleSendOrder} className="w-full bg-indigo-600 text-white p-6 rounded-[28px] font-black uppercase shadow-xl tracking-widest active:scale-95">Отправить заказ</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8 animate-fade-in pb-20">
+      <div className="space-y-4">
+        <h2 className="text-2xl font-black text-slate-800 px-2">Поиск магазина</h2>
+        <div className="relative"><i className="fas fa-search absolute left-6 top-1/2 -translate-y-1/2 text-slate-300"></i>
+          <input type="text" className="w-full p-6 pl-14 bg-white rounded-[32px] shadow-sm border border-slate-100 outline-none text-sm placeholder:text-slate-300" placeholder="Название..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+        </div>
+        {isSearching && <div className="text-center py-6 font-bold text-indigo-400 animate-pulse">Поиск...</div>}
+        <div className="space-y-3">
+          {searchResults.map(shop => (
+            <div key={shop.id} className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 flex justify-between items-center transition-all">
+              <div className="flex items-center gap-5"><div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl shadow-inner"><i className="fas fa-store"></i></div><div><p className="font-black text-slate-800">{shop.shopName}</p><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Владелец: {shop.ownerName}</p></div></div>
+              <button type="button" onClick={() => addShop(shop)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">Добавить</button>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-4">
+        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-2">Ваши магазины</h3>
+        <div className="grid grid-cols-1 gap-4 overflow-hidden">
+          {shopList.map(shop => (
+            <div key={shop.id} className="relative overflow-hidden rounded-[40px] bg-red-500" onTouchStart={(e) => handleTouchStart(e, shop.id)} onTouchMove={(e) => handleTouchMove(e, shop.id)}>
+              <button type="button" onClick={() => removeShop(shop.id)} className="absolute right-0 top-0 bottom-0 w-24 bg-red-500 text-white font-black uppercase text-[10px] flex items-center justify-center">Удалить</button>
+              <button type="button" onClick={() => swipeId === shop.id ? setSwipeId(null) : setActiveShopId(shop.id)} style={{ transform: swipeId === shop.id ? 'translateX(-96px)' : 'translateX(0)' }} className="relative w-full bg-white p-7 shadow-sm border border-slate-50 flex items-center gap-6 transition-transform duration-300 text-left active:bg-slate-50">
+                <div className="w-16 h-16 bg-indigo-600 text-white rounded-[24px] flex items-center justify-center text-3xl shadow-lg"><i className="fas fa-store"></i></div>
+                <div className="flex-1"><p className="text-lg font-black text-slate-800 leading-tight">{shop.shopName}</p><p className="text-xs text-slate-400 font-bold uppercase mt-1">Свайп влево для удаления</p></div>
+                <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-slate-300"><i className="fas fa-chevron-right text-xs"></i></div>
+              </button>
+            </div>
+          ))}
+          {shopList.length === 0 && searchQuery === '' && <div className="text-center py-24 text-slate-300 italic">Нет добавленных магазинов</div>}
+        </div>
+      </div>
     </div>
   );
 };

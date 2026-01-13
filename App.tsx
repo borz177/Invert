@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, Transaction, Sale, CashEntry, AppView, Supplier, Customer, Employee, AppSettings, User, Order } from './types';
 import { NAV_ITEMS, QUICK_ACTIONS, INITIAL_CATEGORIES } from './constants';
@@ -111,15 +112,15 @@ const App: React.FC = () => {
 
   useEffect(() => { if (isAuthenticated) fetchAllData(); }, [isAuthenticated, currentUser?.ownerId]);
 
+  // Фоновое обновление данных каждые 30 секунд
   useEffect(() => {
     if (!isAuthenticated) return;
     const interval = setInterval(() => {
-      fetchAllData(true);
+      fetchAllData(true); // Silent refresh
     }, 30000);
     return () => clearInterval(interval);
   }, [isAuthenticated, currentUser?.ownerId]);
 
-  // Глобальное сохранение (авто-синхронизация)
   useEffect(() => {
     if (!isDataLoaded.current || isLoading || !isAuthenticated) return;
     const timer = setTimeout(() => {
@@ -131,12 +132,12 @@ const App: React.FC = () => {
         { key: 'settings', data: settings }, { key: 'orders', data: orders }
       ];
       Promise.all(syncMap.map(item => db.saveData(item.key, item.data)));
-    }, 5000);
+    }, 2000);
     return () => clearTimeout(timer);
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, orders]);
 
   const handleAddCashEntry = (entry: CashEntry) => {
-    setCashEntries(prev => [entry, ...prev]);
+    setCashEntries([entry, ...cashEntries]);
 
     if (entry.type === 'INCOME' && entry.customerId && entry.category !== 'Продажа') {
       setCustomers(prev => prev.map(c =>
@@ -156,173 +157,193 @@ const App: React.FC = () => {
   };
 
   const handleConfirmOrder = (order: Order) => {
-    setProducts(prev => prev.map(p => {
-      const it = order.items.find(x => x.productId === p.id);
-      return (it && p.type !== 'SERVICE')
-        ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) }
-        : p;
-    }));
+  let finalCustomerId = order.customerId;
+  let updatedCustomers = [...customers];
 
-    const newSale: Sale = {
-      id: `SALE-ORD-${order.id}`,
-      employeeId: currentUser?.id || 'admin',
-      items: order.items.map(it => ({
-        ...it,
-        cost: products.find(p => p.id === it.productId)?.cost || 0
-      })),
-      total: order.total,
-      paymentMethod: order.paymentMethod || 'DEBT',
-      date: new Date().toISOString(),
-      customerId: order.customerId
-    };
+  // Определяем, нужно ли увеличивать долг
+  const shouldIncreaseDebt = order.paymentMethod === 'DEBT';
 
-    setSales(prev => [newSale, ...prev]);
-    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED' } : o));
+  if (order.note && order.note.includes('[Имя:')) {
+    const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
+    const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
+    const name = matchName ? matchName[1].trim() : 'Новый клиент';
+    const phone = matchPhone ? matchPhone[1].trim() : '';
 
-    if (order.paymentMethod === 'DEBT') {
-      setCustomers(prev => prev.map(c => 
-        c.id === order.customerId ? { ...c, debt: (Number(c.debt) || 0) + order.total } : c
-      ));
+    const existing = customers.find(c => (phone && c.phone === phone) || (c.id === order.customerId));
+    if (!existing) {
+      // Создаём нового клиента: долг = сумме заказа ТОЛЬКО если в долг
+      const newCust: Customer = { 
+        id: `CUST-${Date.now()}`, 
+        name, 
+        phone, 
+        debt: shouldIncreaseDebt ? order.total : 0, 
+        discount: 0 
+      };
+      updatedCustomers = [newCust, ...customers];
+      finalCustomerId = newCust.id;
+    } else {
+      finalCustomerId = existing.id;
+      // Увеличиваем долг существующего клиента ТОЛЬКО если в долг
+      if (shouldIncreaseDebt) {
+        updatedCustomers = customers.map(c =>
+          c.id === existing.id
+            ? { ...c, debt: (Number(c.debt) || 0) + order.total }
+            : c
+        );
+      }
     }
-    alert('Заказ выдан!');
+  } else if (finalCustomerId && shouldIncreaseDebt) {
+    // Увеличиваем долг существующего клиента ТОЛЬКО если в долг
+    updatedCustomers = customers.map(c =>
+      c.id === finalCustomerId
+        ? { ...c, debt: (Number(c.debt) || 0) + order.total }
+        : c
+    );
+  }
+
+  const newSale: Sale = {
+    id: `SALE-ORD-${order.id}`,
+    employeeId: currentUser?.id || 'admin',
+    items: order.items.map(it => ({ 
+      ...it, 
+      cost: products.find(p => p.id === it.productId)?.cost || 0 
+    })),
+    total: order.total,
+    paymentMethod: order.paymentMethod || 'DEBT',
+    date: new Date().toISOString(),
+    customerId: finalCustomerId
   };
+
+  // Списываем товары со склада
+  setProducts(products.map(p => {
+    const it = order.items.find(x => x.productId === p.id);
+    return (it && p.type !== 'SERVICE') 
+      ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) } 
+      : p;
+  }));
+
+  setSales([newSale, ...sales]);
+  setOrders(orders.map(o => 
+    o.id === order.id 
+      ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } 
+      : o
+  ));
+  setCustomers(updatedCustomers);
+  alert('Заказ выдан! Сформирована продажа и обновлен долг клиента.');
+};
 
   const handleDeleteSale = (saleId: string) => {
     const sale = sales.find(s => s.id === saleId);
     if (!sale || sale.isDeleted) return;
 
-    if (!window.confirm(`Отменить продажу №${saleId.slice(-4)}?`)) return;
+    if (!window.confirm(`Отменить продажу №${saleId.slice(-4)}? Товары вернутся на склад, долг клиента будет скорректирован.`)) {
+      return;
+    }
 
-    setProducts(prev => prev.map(p => {
+    const updatedProducts = products.map(p => {
       const item = sale.items.find(i => i.productId === p.id);
-      if (item && p.type !== 'SERVICE') return { ...p, quantity: p.quantity + item.quantity };
-      return p;
-    }));
-
-    if (sale.paymentMethod === 'DEBT' && sale.customerId) {
-      setCustomers(prev => prev.map(c =>
-        c.id === sale.customerId ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - sale.total) } : c
-      ));
-    }
-
-    setSales(prev => prev.map(s => s.id === saleId ? { ...s, isDeleted: true } : s));
-  };
-
-  // 🔥 НОВАЯ ФУНКЦИЯ: корректное обновление продажи
-  const handleUpdateSale = (updatedSale: Sale) => {
-    const originalSale = sales.find(s => s.id === updatedSale.id);
-    if (!originalSale) return;
-
-    // 1. Возврат старых товаров на склад
-    let updatedProducts = products.map(p => {
-      const oldItem = originalSale.items.find(i => i.productId === p.id);
-      if (oldItem && p.type !== 'SERVICE') {
-        return { ...p, quantity: p.quantity + oldItem.quantity };
+      if (item && p.type !== 'SERVICE') {
+        return { ...p, quantity: p.quantity + item.quantity };
       }
       return p;
     });
 
-    // 2. Откат старого долга (если был в долг)
     let updatedCustomers = [...customers];
-    if (originalSale.paymentMethod === 'DEBT' && originalSale.customerId) {
+    if (sale.paymentMethod === 'DEBT' && sale.customerId) {
       updatedCustomers = customers.map(c =>
-        c.id === originalSale.customerId
-          ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - originalSale.total) }
+        c.id === sale.customerId
+          ? { ...c, debt: Math.max(0, (Number(c.debt) || 0) - sale.total) }
           : c
       );
     }
 
-    // 3. Списание новых товаров
-    updatedProducts = updatedProducts.map(p => {
-      const newItem = updatedSale.items.find(i => i.productId === p.id);
-      if (newItem && p.type !== 'SERVICE') {
-        return { ...p, quantity: Math.max(0, p.quantity - newItem.quantity) };
-      }
-      return p;
-    });
-
-    // 4. Обновление нового долга (если в долг)
-    if (updatedSale.paymentMethod === 'DEBT' && updatedSale.customerId) {
-      updatedCustomers = updatedCustomers.map(c =>
-        c.id === updatedSale.customerId
-          ? { ...c, debt: (Number(c.debt) || 0) + updatedSale.total }
-          : c
-      );
+    const relatedCashEntry = cashEntries.find(
+      ce => ce.description?.includes(saleId.slice(-4)) && ce.category === 'Продажа'
+    );
+    let updatedCashEntries = cashEntries;
+    if (relatedCashEntry) {
+      updatedCashEntries = cashEntries.filter(ce => ce.id !== relatedCashEntry.id);
     }
 
-    // 5. Сохраняем всё
-    const updatedSales = sales.map(s => s.id === updatedSale.id ? updatedSale : s);
-    
+    const updatedSales = sales.map(s =>
+      s.id === saleId ? { ...s, isDeleted: true } : s
+    );
+
     setProducts(updatedProducts);
     setCustomers(updatedCustomers);
+    setCashEntries(updatedCashEntries);
     setSales(updatedSales);
-    
-    // Явное сохранение в БД
-    db.saveData('products', updatedProducts);
-    db.saveData('customers', updatedCustomers);
-    db.saveData('sales', updatedSales);
+  };
+
+  const handleClearData = async () => {
+    if (!window.confirm('Очистить все данные?')) return;
+    setProducts([]); setTransactions([]); setSales([]); setCashEntries([]); setSuppliers([]); setCustomers([]); setEmployees([]); setOrders([]); setCategories(INITIAL_CATEGORIES);
   };
 
   const renderView = () => {
     if (!currentUser) return null;
 
     if (isClient && view !== 'PROFILE') {
-      return <ClientPortal user={currentUser} products={products} sales={sales} orders={orders} onAddOrder={(o) => setOrders(prev => [o, ...prev])} onActiveShopChange={setActiveClientShopName} />;
+      return <ClientPortal user={currentUser} products={products} sales={sales} orders={orders} onAddOrder={(o) => setOrders([o, ...orders])} onActiveShopChange={setActiveClientShopName} />;
     }
 
     switch (view) {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={setView} orderCount={orders.filter(o => o.status === 'NEW').length}/>;
       case 'PRODUCTS': return <ProductList
-        products={products}
-        categories={categories}
-        canEdit={true}
-        canCreate={true}
-        canDelete={true}
-        showCost={true}
-        onAdd={async (p) => {
-          setProducts(prev => {
-            const updated = [p, ...prev];
-            db.saveData('products', updated);
-            return updated;
-          });
-        }}
-        onAddBulk={async (ps) => {
-          setProducts(prev => {
-            const updated = [...ps, ...prev];
-            db.saveData('products', updated);
-            return updated;
-          });
-        }}
-        onUpdate={async (p) => {
-          setProducts(prev => {
-            const updated = prev.map(x => x.id === p.id ? p : x);
-            db.saveData('products', updated);
-            return updated;
-          });
-        }}
-        onDelete={async (id) => {
-          setProducts(prev => {
-            const updated = prev.filter(x => x.id !== id);
-            db.saveData('products', updated);
-            return updated;
-          });
-        }}
-        onAddCategory={async (c) => {
-          setCategories(prev => {
-            const updated = [...prev, c];
-            db.saveData('categories', updated);
-            return updated;
-          });
-        }}
-        onRenameCategory={async (o, n) => {
-          setCategories(prev => prev.map(cat => cat === o ? n : cat));
-          setProducts(prev => prev.map(p => p.category === o ? { ...p, category: n } : p));
-        }}
-        onDeleteCategory={async (c) => {
-          setCategories(prev => prev.filter(cat => cat !== c));
-          setProducts(prev => prev.map(p => p.category === c ? { ...p, category: 'Другое' } : p));
-        }}
-      />;
+  products={products}
+  categories={categories}
+  canEdit={true}
+  canCreate={true}
+  canDelete={true}
+  showCost={true}
+  onAdd={async (p) => {
+    const updated = [p, ...products];
+    setProducts(updated);
+    await db.saveData('products', updated);
+  }}
+  onAddBulk={async (ps) => {
+    const updated = [...ps, ...products];
+    setProducts(updated);
+    await db.saveData('products', updated);
+  }}
+  onUpdate={async (p) => {
+    const updated = products.map(x => x.id === p.id ? p : x);
+    setProducts(updated);
+    await db.saveData('products', updated);
+  }}
+  onDelete={async (id) => {
+    const updated = products.filter(x => x.id !== id);
+    setProducts(updated);
+    await db.saveData('products', updated);
+  }}
+  onAddCategory={async (c) => {
+    const updated = [...categories, c];
+    setCategories(updated);
+    await db.saveData('categories', updated);
+  }}
+  onRenameCategory={async (o, n) => {
+    const updatedCats = categories.map(cat => cat === o ? n : cat);
+    const updatedProds = products.map(p => p.category === o ? { ...p, category: n } : p);
+    setCategories(updatedCats);
+    setProducts(updatedProds);
+    await Promise.all([
+      db.saveData('categories', updatedCats),
+      db.saveData('products', updatedProds)
+    ]);
+  }}
+  onDeleteCategory={async (c) => {
+    const updatedCats = categories.filter(cat => cat !== c);
+    const updatedProds = products.map(p =>
+      p.category === c ? { ...p, category: 'Другое' } : p
+    );
+    setCategories(updatedCats);
+    setProducts(updatedProds);
+    await Promise.all([
+      db.saveData('categories', updatedCats),
+      db.saveData('products', updatedProds)
+    ]);
+  }}
+/>;
       case 'WAREHOUSE': return <Warehouse
         products={products}
         suppliers={suppliers}
@@ -330,32 +351,47 @@ const App: React.FC = () => {
         categories={categories}
         batch={warehouseBatch}
         setBatch={setWarehouseBatch}
-        onTransaction={t => setTransactions(prev => [t, ...prev])}
+        onTransaction={t => setTransactions([t, ...transactions])}
         onTransactionsBulk={ts => {
-           setTransactions(prev => [...ts, ...prev]);
-           const prodUpdates: Record<string, {q: number, c: number}> = {};
-           const supUpdates: Record<string, number> = {};
+           // Обновление остатков и долгов поставщиков
+           const updatedProducts = [...products];
+           const supplierUpdates: Record<string, number> = {};
 
            ts.forEach(t => {
-             if (!prodUpdates[t.productId]) prodUpdates[t.productId] = {q: 0, c: 0};
-             prodUpdates[t.productId].q += t.quantity;
-             prodUpdates[t.productId].c = t.pricePerUnit || 0;
+             // 1. Остатки товара
+             const pIdx = updatedProducts.findIndex(p => p.id === t.productId);
+             if (pIdx > -1) {
+               updatedProducts[pIdx] = {
+                 ...updatedProducts[pIdx],
+                 quantity: updatedProducts[pIdx].quantity + t.quantity,
+                 cost: t.pricePerUnit || updatedProducts[pIdx].cost // Обновляем себестоимость по последнему приходу
+               };
+             }
 
+             // 2. Расчет долга если в долг
              if (t.paymentMethod === 'DEBT' && t.supplierId) {
-               supUpdates[t.supplierId] = (supUpdates[t.supplierId] || 0) + (t.quantity * (t.pricePerUnit || 0));
+               const amount = t.quantity * (t.pricePerUnit || 0);
+               supplierUpdates[t.supplierId] = (supplierUpdates[t.supplierId] || 0) + amount;
              }
            });
 
-           setProducts(prev => prev.map(p => prodUpdates[p.id] ? { ...p, quantity: p.quantity + prodUpdates[p.id].q, cost: prodUpdates[p.id].c || p.cost } : p));
-           setSuppliers(prev => prev.map(s => supUpdates[s.id] ? { ...s, debt: (Number(s.debt) || 0) + supUpdates[s.id] } : s));
+           // 3. Обновляем поставщиков
+           const updatedSuppliers = suppliers.map(s => {
+             if (supplierUpdates[s.id]) {
+               return { ...s, debt: (Number(s.debt) || 0) + supplierUpdates[s.id] };
+             }
+             return s;
+           });
+
+           setProducts(updatedProducts);
+           setSuppliers(updatedSuppliers);
+           setTransactions([...ts, ...transactions]);
         }}
         onAddCashEntry={handleAddCashEntry}
         onAddProduct={async (p) => {
-          setProducts(prev => {
-            const updated = [p, ...prev];
-            db.saveData('products', updated);
-            return updated;
-          });
+          const updated = [p, ...products];
+          setProducts(updated);
+          await db.saveData('products', updated);
         }}
       />;
       case 'SALES': return <POS 
@@ -366,26 +402,42 @@ const App: React.FC = () => {
         currentUserId={currentUser?.id} 
         settings={settings}
         onSale={s => {
-          setSales(prev => [s, ...prev]);
-          setProducts(prev => prev.map(p => {
-            const item = s.items.find(it => it.productId === p.id);
-            return (item && p.type !== 'SERVICE') ? { ...p, quantity: Math.max(0, p.quantity - item.quantity) } : p;
-          }));
+          const updatedProducts = products.map(p => {
+            const itemInSale = s.items.find(it => it.productId === p.id);
+            if (itemInSale && p.type !== 'SERVICE') {
+              return { ...p, quantity: Math.max(0, p.quantity - itemInSale.quantity) };
+            }
+            return p;
+          });
+
+          setSales([s, ...sales]);
+          setProducts(updatedProducts);
 
           if (s.paymentMethod === 'DEBT' && s.customerId) {
-            setCustomers(prev => prev.map(c => c.id === s.customerId ? { ...c, debt: (Number(c.debt) || 0) + s.total } : c));
-          } else if (s.paymentMethod !== 'DEBT') {
+            setCustomers(prev => prev.map(c =>
+              c.id === s.customerId
+                ? { ...c, debt: (Number(c.debt) || 0) + s.total }
+                : c
+            ));
+          }
+
+          if (s.paymentMethod !== 'DEBT') {
             handleAddCashEntry({
-              id: `CS-${Date.now()}`, amount: s.total, type: 'INCOME', category: 'Продажа',
-              description: `Продажа №${s.id.slice(-4)}`, date: s.date, employeeId: s.employeeId
+              id: `S-${Date.now()}`,
+              amount: s.total,
+              type: 'INCOME',
+              category: 'Продажа',
+              description: `Продажа №${s.id.slice(-4)}`,
+              date: s.date,
+              employeeId: s.employeeId
             });
           }
         }} 
       />;
-      case 'CLIENTS': return <Clients customers={customers} sales={sales} cashEntries={cashEntries} onAdd={c => setCustomers(prev => [c, ...prev])} onUpdate={c => setCustomers(prev => prev.map(x => x.id === c.id ? c : x))} onDelete={id => setCustomers(prev => prev.filter(x => x.id !== id))}/>;
-      case 'SUPPLIERS': return <Suppliers suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products} onAdd={s => setSuppliers(prev => [s, ...prev])} onUpdate={s => setSuppliers(prev => prev.map(x => x.id === s.id ? s : x))} onDelete={id => setSuppliers(prev => prev.filter(x => x.id !== id))}/>;
-      case 'EMPLOYEES': return <Employees employees={employees} sales={sales} onAdd={e => setEmployees(prev => [e, ...prev])} onUpdate={e => setEmployees(prev => prev.map(x => x.id === e.id ? e : x))} onDelete={id => setEmployees(prev => prev.filter(x => x.id !== id))}/>;
-      case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={o => setOrders(prev => prev.map(x => x.id === o.id ? o : x))} onConfirmOrder={handleConfirmOrder}/>;
+      case 'CLIENTS': return <Clients customers={customers} sales={sales} cashEntries={cashEntries} onAdd={c => setCustomers([...customers, c])} onUpdate={c => setCustomers(customers.map(x => x.id === c.id ? c : x))} onDelete={id => setCustomers(customers.filter(x => x.id !== id))}/>;
+      case 'SUPPLIERS': return <Suppliers suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products} onAdd={s => setSuppliers([...suppliers, s])} onUpdate={s => setSuppliers(suppliers.map(x => x.id === s.id ? s : x))} onDelete={id => setSuppliers(suppliers.filter(x => x.id !== id))}/>;
+      case 'EMPLOYEES': return <Employees employees={employees} sales={sales} onAdd={e => setEmployees([...employees, e])} onUpdate={e => setEmployees(employees.map(x => x.id === e.id ? e : x))} onDelete={id => setEmployees(employees.filter(x => x.id !== id))}/>;
+      case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={o => setOrders(orders.map(x => x.id === o.id ? o : x))} onConfirmOrder={handleConfirmOrder}/>;
       case 'ALL_OPERATIONS': return <AllOperations 
         sales={sales} 
         transactions={transactions} 
@@ -395,10 +447,12 @@ const App: React.FC = () => {
         customers={customers} 
         settings={settings}
         onUpdateTransaction={()=>{}} 
-        onDeleteTransaction={(id)=>setTransactions(prev => prev.filter(t=>t.id!==id))} 
+        onDeleteTransaction={(id)=>setTransactions(transactions.filter(t=>t.id!==id))} 
         onDeleteSale={handleDeleteSale} 
-        onDeleteCashEntry={(id)=>setCashEntries(prev => prev.filter(c=>c.id!==id))} 
-        onUpdateSale={handleUpdateSale} // ← ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ
+        onDeleteCashEntry={(id)=>setCashEntries(cashEntries.filter(c=>c.id!==id))} 
+        onUpdateSale={(updatedSale) => {
+          setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s));
+        }} 
         canDelete={isAdmin}
       />;
       case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={handleAddCashEntry}/>;
@@ -406,7 +460,7 @@ const App: React.FC = () => {
       case 'PRICE_LIST': return <PriceList products={products} showCost={isAdmin}/>;
       case 'STOCK_REPORT': return <StockReport products={products}/>;
       case 'TARIFFS': return <Tariffs />;
-      case 'SETTINGS': return <Settings settings={settings} onUpdate={setSettings} onClear={() => { if(confirm('Очистить все данные?')){ setProducts([]); setTransactions([]); setSales([]); setCashEntries([]); setSuppliers([]); setCustomers([]); setEmployees([]); setOrders([]); setCategories(INITIAL_CATEGORIES); } }} isOwner={isAdmin}/>;
+      case 'SETTINGS': return <Settings settings={settings} onUpdate={setSettings} onClear={handleClearData} isOwner={isAdmin}/>;
       case 'PROFILE': return <Profile user={currentUser as any} sales={sales} onLogout={handleLogout} onUpdateProfile={handleLogin}/>;
       case 'MORE_MENU': return (
         <div className="space-y-4 animate-fade-in pb-10">
@@ -428,7 +482,7 @@ const App: React.FC = () => {
     }
   };
 
-  if (isLoading) return <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-[300]"><div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div><p className="mt-6 font-black text-indigo-600 uppercase tracking-[0.2em] text-xs">Загрузка...</p></div>;
+  if (isLoading) return <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-[300]"><div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div><p className="mt-6 font-black text-indigo-600 uppercase tracking-[0.2em] text-xs">Синхронизация...</p></div>;
   if (!isAuthenticated) return <Login onLogin={handleLogin}/>;
 
   return (
