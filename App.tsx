@@ -173,14 +173,14 @@ const App: React.FC = () => {
 
   // Функция для автоматизации B2B закупки
   const handleB2BPurchase = (shopId: string, shopName: string, order: Order, shopProducts: Product[]) => {
-    // 1. Проверяем наличие поставщика
+    // 1. Проверяем наличие поставщика (Долг НЕ меняем здесь!)
     setSuppliers(prev => {
       const exists = prev.find(s => s.id === shopId);
       if (!exists) {
-        const newSupplier: Supplier = { id: shopId, name: shopName, phone: '', debt: order.total };
+        const newSupplier: Supplier = { id: shopId, name: shopName, phone: '', debt: 0 };
         return [newSupplier, ...prev];
       }
-      return prev.map(s => s.id === shopId ? { ...s, debt: (Number(s.debt) || 0) + order.total } : s);
+      return prev;
     });
 
     // 2. Создаем "Ожидаемое поступление" в транзакциях
@@ -188,13 +188,13 @@ const App: React.FC = () => {
       const shopP = shopProducts.find(p => p.id === it.productId);
       return {
         id: `B2B-IN-${Date.now()}-${it.productId}`,
-        productId: it.productId, // Важно: это ID товара в чужом магазине! В реальной системе нужно сопоставление.
+        productId: it.productId,
         supplierId: shopId,
-        type: 'PENDING_IN', // Новый статус: Ожидает приемки
+        type: 'PENDING_IN',
         quantity: it.quantity,
         date: order.date,
         pricePerUnit: it.price,
-        paymentMethod: 'DEBT',
+        paymentMethod: 'DEBT', // По умолчанию, может измениться при приемке
         note: `B2B Заказ №${order.id.slice(-4)} у ${shopName}. Название: ${shopP?.name || 'Товар'}`,
         employeeId: currentUser?.id || 'admin',
         orderId: order.id
@@ -248,7 +248,7 @@ const App: React.FC = () => {
       setCashEntries(prev => [cashEntry, ...prev]);
     }
 
-    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o));
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId, paymentMethod: order.paymentMethod } : o));
     setCustomers(updatedCustomers);
     setSales(prev => [newSale, ...prev]);
     alert('Заказ выдан!');
@@ -270,7 +270,7 @@ const App: React.FC = () => {
         onRenameCategory={(o, n) => { setCategories(prev => { const up = prev.map(cat => cat === o ? n : cat); db.saveData('categories', up); return up; }); setProducts(prev => { const up = prev.map(p => p.category === o ? { ...p, category: n } : p); db.saveData('products', up); return up; }); }}
         onDeleteCategory={(c) => { setCategories(prev => { const up = prev.filter(cat => cat !== c); db.saveData('categories', up); return up; }); setProducts(prev => { const up = prev.map(p => p.category === c ? { ...p, category: 'Другое' } : p); db.saveData('products', up); return up; }); }}
       />;
-      case 'WAREHOUSE': return <Warehouse products={products} suppliers={suppliers} transactions={transactions} categories={categories} batch={warehouseBatch} setBatch={setWarehouseBatch} onTransaction={t => setTransactions(prev => [t, ...prev])} onTransactionsBulk={ts => { setTransactions(prev => [...ts, ...prev]); const pU: any = {}; const sU: any = {}; ts.forEach(t => { pU[t.productId] = { q: (pU[t.productId]?.q || 0) + t.quantity, c: t.pricePerUnit }; if (t.paymentMethod === 'DEBT' && t.supplierId) sU[t.supplierId] = (sU[t.supplierId] || 0) + (t.quantity * (t.pricePerUnit || 0)); }); setProducts(prev => prev.map(p => pU[p.id] ? { ...p, quantity: p.quantity + pU[p.id].q, cost: pU[p.id].c || p.cost } : p)); setSuppliers(prev => prev.map(s => sU[s.id] ? { ...s, debt: (Number(s.debt) || 0) + sU[s.id] } : s)); }} onAddProduct={(p) => setProducts(prev => { const up = [p, ...prev]; db.saveData('products', up); return up; })} />;
+      case 'WAREHOUSE': return <Warehouse products={products} suppliers={suppliers} transactions={transactions} categories={categories} batch={warehouseBatch} setBatch={setWarehouseBatch} onTransaction={t => setTransactions(prev => [t, ...prev])} onTransactionsBulk={ts => { setTransactions(prev => [...ts, ...prev]); const pU: any = {}; const sU: any = {}; ts.forEach(t => { pU[t.productId] = { q: (pU[t.productId]?.q || 0) + t.quantity, c: t.pricePerUnit }; if (t.paymentMethod === 'DEBT' && t.supplierId) sU[t.supplierId] = (sU[t.supplierId] || 0) + (t.quantity * (t.pricePerUnit || 0)); }); setProducts(prev => prev.map(p => pU[p.id] ? { ...p, quantity: p.quantity + pU[p.id].q, cost: pU[p.id].c || p.cost } : p)); setSuppliers(prev => prev.map(s => sU[s.id] ? { ...s, debt: (Number(s.debt) || 0) + sU[s.id] } : s)); }} onAddProduct={(p) => setProducts(prev => { const up = [p, ...prev]; db.saveData('products', up); return up; })} onDeleteTransaction={(id) => setTransactions(prev => prev.filter(t => t.id !== id))} />;
       case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} currentUserId={currentUser?.id} settings={settings} onSale={s => { setSales(prev => [s, ...prev]); setProducts(prev => prev.map(p => { const it = s.items.find(x => x.productId === p.id); return (it && p.type !== 'SERVICE') ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) } : p; })); if (s.paymentMethod === 'DEBT' && s.customerId) setCustomers(prev => prev.map(c => c.id === s.customerId ? { ...c, debt: (Number(c.debt) || 0) + s.total } : c)); }} />;
       case 'CLIENTS': return <Clients customers={customers} sales={sales} cashEntries={cashEntries} onAdd={c => setCustomers(prev => [c, ...prev])} onUpdate={c => setCustomers(prev => prev.map(x => x.id === c.id ? c : x))} onDelete={id => setCustomers(prev => prev.filter(x => x.id !== id))}/>;
       case 'SUPPLIERS': return <Suppliers suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products} onAdd={s => setSuppliers(prev => [s, ...prev])} onUpdate={s => setSuppliers(prev => prev.map(x => x.id === s.id ? s : x))} onDelete={id => setSuppliers(prev => prev.filter(x => x.id !== id))}/>;

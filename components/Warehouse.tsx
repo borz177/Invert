@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Product, Transaction, Supplier, CashEntry } from '../types';
+import { Product, Transaction, Supplier, CashEntry, Order } from '../types';
 import { db } from '../services/api';
 
 interface WarehouseProps {
@@ -14,11 +14,14 @@ interface WarehouseProps {
   onTransactionsBulk: (ts: Transaction[]) => void;
   onAddCashEntry?: (entry: Omit<CashEntry, 'id' | 'date' | 'employeeId'> & { id?: string }) => void;
   onAddProduct: (p: Product) => void;
+  onDeleteTransaction: (id: string) => void;
+  orders?: Order[];
 }
 
 const Warehouse: React.FC<WarehouseProps> = ({
   products, suppliers, transactions, categories, batch, setBatch,
-  onTransactionsBulk, onAddCashEntry, onAddProduct
+  onTransactionsBulk, onAddCashEntry, onAddProduct, onDeleteTransaction,
+  orders = []
 }) => {
   const [warehouseTab, setWarehouseTab] = useState<'MANUAL' | 'EXTERNAL'>('MANUAL');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -34,8 +37,8 @@ const Warehouse: React.FC<WarehouseProps> = ({
 
   // B2B Приемка
   const [selectedB2BOrderId, setSelectedB2BOrderId] = useState<string | null>(null);
+  const [b2bPaymentMethod, setB2BPaymentMethod] = useState<'CASH' | 'DEBT'>('DEBT');
   const [productMappings, setProductMappings] = useState<Record<string, string>>({}); // { supplierId_remoteId: localId }
-  // Fix: Updated type definition for b2bItemSettings to include remoteName and remoteProductId
   const [b2bItemSettings, setB2BItemSettings] = useState<Record<string, {
     localId: string,
     category: string,
@@ -68,7 +71,6 @@ const Warehouse: React.FC<WarehouseProps> = ({
     }
   }, [suppliers]);
 
-  // Fix: Added missing handlers
   const openAddItem = (p: Product) => {
     setActiveItem(p);
     setInputQty(1);
@@ -175,21 +177,27 @@ const Warehouse: React.FC<WarehouseProps> = ({
   }, [transactions]);
 
   const openB2BOrder = (orderId: string) => {
-    const order = externalOrders.find(o => o.orderId === orderId);
-    if (!order) return;
+    const orderGroup = externalOrders.find(o => o.orderId === orderId);
+    if (!orderGroup) return;
 
-    // Подготавливаем настройки для каждого товара в заказе
+    // Синхронизация метода оплаты от поставщика
+    const remoteOrder = orders.find(o => o.id === orderId);
+    if (remoteOrder?.paymentMethod) {
+      setB2BPaymentMethod(remoteOrder.paymentMethod === 'DEBT' ? 'DEBT' : 'CASH');
+    } else {
+      setB2BPaymentMethod('DEBT');
+    }
+
     const initialSettings: any = {};
-    order.items.forEach(item => {
-      const mappingKey = `${order.supplierId}_${item.productId}`;
+    orderGroup.items.forEach(item => {
+      const mappingKey = `${orderGroup.supplierId}_${item.productId}`;
       const existingMapping = productMappings[mappingKey];
 
-      // Извлекаем имя из заметки (было сохранено в App.tsx)
       const remoteNameMatch = item.note.match(/Название:\s*(.*)/);
       const remoteName = remoteNameMatch ? remoteNameMatch[1] : 'Товар';
 
       initialSettings[item.id] = {
-        localId: existingMapping || '', // Если есть маппинг, привязываем
+        localId: existingMapping || '',
         category: categories[0] || 'Другое',
         rename: remoteName,
         remoteName: remoteName,
@@ -202,18 +210,16 @@ const Warehouse: React.FC<WarehouseProps> = ({
   };
 
   const handleConfirmB2BReceipt = async () => {
-    const order = externalOrders.find(o => o.orderId === selectedB2BOrderId);
-    if (!order) return;
+    const orderGroup = externalOrders.find(o => o.orderId === selectedB2BOrderId);
+    if (!orderGroup) return;
 
     const newTransactions: Transaction[] = [];
     const newMappings = { ...productMappings };
-    const itemsToCreate: Product[] = [];
 
-    for (const item of order.items) {
+    for (const item of orderGroup.items) {
       const settings = b2bItemSettings[item.id];
       let finalLocalId = settings.localId;
 
-      // Если товара нет в локальной базе, создаем новый
       if (!finalLocalId) {
         finalLocalId = `P-B2B-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
         const newProduct: Product = {
@@ -221,43 +227,40 @@ const Warehouse: React.FC<WarehouseProps> = ({
           name: settings.rename || settings.remoteName,
           sku: `B2B-${Math.floor(Math.random() * 10000)}`,
           category: settings.category,
-          price: (item.pricePerUnit || 0) * 1.5, // Наценка 50% по умолчанию
+          price: (item.pricePerUnit || 0) * 1.5,
           cost: item.pricePerUnit || 0,
-          quantity: 0, // Увеличится через транзакцию
+          quantity: 0,
           minStock: 5,
           unit: 'шт',
           type: 'PRODUCT'
         };
-        itemsToCreate.push(newProduct);
         onAddProduct(newProduct);
-
-        // Запоминаем связь для будущего
-        const mappingKey = `${order.supplierId}_${settings.remoteProductId}`;
+        const mappingKey = `${orderGroup.supplierId}_${settings.remoteProductId}`;
         newMappings[mappingKey] = finalLocalId;
       } else {
-        // Если привязан к существующему, просто запоминаем связь (обновляем если сменили)
-        const mappingKey = `${order.supplierId}_${settings.remoteProductId}`;
+        const mappingKey = `${orderGroup.supplierId}_${settings.remoteProductId}`;
         newMappings[mappingKey] = finalLocalId;
       }
 
-      // Создаем реальную транзакцию прихода
       newTransactions.push({
         ...item,
         id: `TR-B2B-IN-${Date.now()}-${item.id}`,
         type: 'IN',
         productId: finalLocalId,
-        note: `B2B Приемка. Заказ №${order.orderId.slice(-4)}. Поставщик: ${suppliers.find(s=>s.id===order.supplierId)?.name}`
+        // FIX: corrected variable name from b2BPaymentMethod to b2bPaymentMethod
+        paymentMethod: b2bPaymentMethod, // Используем актуальный метод
+        note: `B2B Приемка. Заказ №${orderGroup.orderId.slice(-4)}. Поставщик: ${suppliers.find(s=>s.id===orderGroup.supplierId)?.name}`
       });
+
+      // ⚠️ КРИТИЧНО: Удаляем старую "ожидаемую" транзакцию
+      onDeleteTransaction(item.id);
     }
 
-    // Сохраняем новые связи в БД
     await db.saveData('b2b_mappings', newMappings);
     setProductMappings(newMappings);
 
-    // Проводим транзакции
-    // Сначала удаляем PENDING_IN (в реальной системе это должно быть атомарно, тут через bulk)
-    const remainingTransactions = transactions.filter(t => t.orderId !== selectedB2BOrderId);
-    onTransactionsBulk([...remainingTransactions, ...newTransactions]);
+    // Добавляем новые транзакции (остатки и долги обновятся в App.tsx)
+    onTransactionsBulk(newTransactions);
 
     setSelectedB2BOrderId(null);
     alert('Товары успешно приняты на склад!');
@@ -356,6 +359,21 @@ const Warehouse: React.FC<WarehouseProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-6 pr-1">
+              {/* Статус оплаты */}
+              <div className="bg-indigo-50 p-5 rounded-3xl border border-indigo-100">
+                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center mb-3">Способ оплаты (как учесть этот приход)</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {/* FIX: corrected condition variable name from b2BPaymentMethod to b2bPaymentMethod */}
+                  <button onClick={() => setB2BPaymentMethod('CASH')} className={`py-3 rounded-2xl font-black text-[10px] uppercase transition-all border-2 ${b2bPaymentMethod === 'CASH' ? 'bg-emerald-500 border-emerald-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>Оплачено</button>
+                  <button onClick={() => setB2BPaymentMethod('DEBT')} className={`py-3 rounded-2xl font-black text-[10px] uppercase transition-all border-2 ${b2bPaymentMethod === 'DEBT' ? 'bg-red-500 border-red-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>В долг</button>
+                </div>
+                {orders.find(o => o.id === selectedB2BOrderId)?.paymentMethod && (
+                   <p className="text-[8px] text-center text-indigo-400 font-bold uppercase mt-2 opacity-70">
+                     * Выбор отправителя: {orders.find(o => o.id === selectedB2BOrderId)?.paymentMethod === 'CASH' ? 'ОПЛАЧЕНО' : 'В ДОЛГ'}
+                   </p>
+                )}
+              </div>
+
               {externalOrders.find(o => o.orderId === selectedB2BOrderId)?.items.map(item => {
                 const settings = b2bItemSettings[item.id];
                 if (!settings) return null;
@@ -465,7 +483,7 @@ const Warehouse: React.FC<WarehouseProps> = ({
                 <input type="number" placeholder="Продажа" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-black text-emerald-600" value={newProd.price || ''} onChange={e => setNewProd({...newProd, price: parseFloat(e.target.value) || 0})} />
               </div>
             </div>
-            <div className="flex gap-3 pt-2"><button type="button" onClick={() => setShowNewProductForm(false)} className="flex-1 py-4 font-bold text-slate-400">Отмена</button><button type="submit" className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg">СОЗДАТЬ</button></div>
+            <div className="flex gap-3 pt-2"><button type="button" onClick={() => setShowNewProductForm(false)} className="flex-1 py-4 font-bold text-slate-400">Отмена</button><button type="submit" className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg">СОХРАНИТЬ</button></div>
           </form>
         </div>
       )}
