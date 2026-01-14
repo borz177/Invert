@@ -326,14 +326,7 @@ const App: React.FC = () => {
       case 'EMPLOYEES': return <Employees employees={employees} sales={sales} onAdd={e => setEmployees(prev => [e, ...prev])} onUpdate={e => setEmployees(prev => prev.map(x => x.id === e.id ? e : x))} onDelete={id => setEmployees(prev => prev.filter(x => x.id !== id))}/>;
       case 'ORDERS_MANAGER': return <OrdersManager orders={orders} customers={customers} products={products} onUpdateOrder={o => setOrders(prev => { const updated = prev.map(x => x.id === o.id ? o : x); db.saveData('orders', updated); return updated; })} onConfirmOrder={handleConfirmOrder}/>;
       case 'ALL_OPERATIONS': return <AllOperations sales={sales} transactions={transactions} cashEntries={cashEntries} products={products} employees={employees} customers={customers} settings={settings} onUpdateTransaction={()=>{}} onDeleteTransaction={(id)=>setTransactions(prev => { const updated = prev.filter(t=>t.id!==id); db.saveData('transactions', updated); return updated; })} onDeleteSale={(id)=>setSales(prev => { const updated = prev.map(s => s.id===id ? {...s, isDeleted:true} : s); db.saveData('sales', updated); return updated; })} onDeleteCashEntry={(id)=>setCashEntries(prev => { const updated = prev.filter(c=>c.id!==id); db.saveData('cashEntries', updated); return updated; })} onUpdateSale={(updatedSale) => { setSales(prev => { const updated = prev.map(s => s.id === updatedSale.id ? updatedSale : s); db.saveData('sales', updated); return updated; }); }} canDelete={isAdmin || isSuperAdmin} />;
-case 'CASHBOX': return <Cashbox
-  entries={cashEntries}
-  customers={customers}
-  suppliers={suppliers}
-  onAdd={e => setCashEntries(prev => { const updated = [e, ...prev]; db.saveData('cashEntries', updated); return updated; })}
-  onUpdateCustomer={c => setCustomers(prev => prev.map(x => x.id === c.id ? c : x))}
-  onUpdateSupplier={s => setSuppliers(prev => prev.map(x => x.id === s.id ? s : x))}
-/>;
+      case 'CASHBOX': return <Cashbox entries={cashEntries} customers={customers} suppliers={suppliers} onAdd={e => setCashEntries(prev => { const updated = [e, ...prev]; db.saveData('cashEntries', updated); return updated; })} onUpdateCustomer={c => setCustomers(prev => prev.map(x => x.id === c.id ? c : x))} onUpdateSupplier={s => setSuppliers(prev => prev.map(x => x.id === s.id ? s : x))}/>;
       case 'REPORTS': return <Reports sales={sales} transactions={transactions} products={products}/>;
       case 'PRICE_LIST': return <PriceList products={products} showCost={isAdmin || isSuperAdmin}/>;
       case 'STOCK_REPORT': return <StockReport products={products}/>;
