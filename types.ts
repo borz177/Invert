@@ -56,6 +56,8 @@ export interface Order {
   date: string;
   note?: string;
   paymentMethod?: 'CASH' | 'CARD' | 'DEBT';
+  isExternalPurchase?: boolean; // Флаг: это закупка у другого магазина
+  supplierShopId?: string;     // ID магазина-продавца
 }
 
 export interface Employee {
@@ -75,7 +77,7 @@ export interface Employee {
   };
 }
 
-export type TransactionType = 'IN' | 'OUT' | 'SALE' | 'ADJUSTMENT';
+export type TransactionType = 'IN' | 'OUT' | 'SALE' | 'ADJUSTMENT' | 'PENDING_IN';
 
 export interface Transaction {
   id: string;
@@ -90,6 +92,7 @@ export interface Transaction {
   paymentMethod?: 'CASH' | 'DEBT';
   isDeleted?: boolean;
   batchId?: string;
+  orderId?: string; // Связь с заказом в маркетплейсе
 }
 
 export interface Sale {
@@ -147,5 +150,6 @@ export type AppView =
   | 'MORE_MENU'
   | 'TENANT_ADMIN'
   | 'CLIENT_PORTAL'
+  | 'MARKETPLACE'
   | 'ORDERS_MANAGER'
   | 'TARIFFS';

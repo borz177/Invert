@@ -171,90 +171,88 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [products, transactions, sales, cashEntries, suppliers, customers, employees, categories, settings, orders]);
 
-  const handleConfirmOrder = (order: Order) => {
-  // 1. Списываем товары
-  setProducts(prev => prev.map(p => {
-    const it = order.items.find(x => x.productId === p.id);
-    return (it && p.type !== 'SERVICE')
-      ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) }
-      : p;
-  }));
+  // Функция для автоматизации B2B закупки
+  const handleB2BPurchase = (shopId: string, shopName: string, order: Order, shopProducts: Product[]) => {
+    // 1. Проверяем наличие поставщика
+    setSuppliers(prev => {
+      const exists = prev.find(s => s.id === shopId);
+      if (!exists) {
+        const newSupplier: Supplier = { id: shopId, name: shopName, phone: '', debt: order.total };
+        return [newSupplier, ...prev];
+      }
+      return prev.map(s => s.id === shopId ? { ...s, debt: (Number(s.debt) || 0) + order.total } : s);
+    });
 
-  // 2. Обработка клиента (как в предыдущем ответе)
-  let finalCustomerId = order.customerId;
-  let updatedCustomers = [...customers];
-
-  if (order.note && order.note.includes('[Имя:')) {
-    const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
-    const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
-    const name = matchName ? matchName[1].trim() : 'Новый клиент';
-    const phone = matchPhone ? matchPhone[1].trim() : '';
-
-    const existing = customers.find(c =>
-      (phone && c.phone === phone) || (c.id === order.customerId)
-    );
-
-    if (!existing) {
-      const newCust: Customer = {
-        id: `CUST-${Date.now()}`,
-        name,
-        phone,
-        debt: 0,
-        discount: 0
+    // 2. Создаем "Ожидаемое поступление" в транзакциях
+    const newTransactions: Transaction[] = order.items.map(it => {
+      const shopP = shopProducts.find(p => p.id === it.productId);
+      return {
+        id: `B2B-IN-${Date.now()}-${it.productId}`,
+        productId: it.productId, // Важно: это ID товара в чужом магазине! В реальной системе нужно сопоставление.
+        supplierId: shopId,
+        type: 'PENDING_IN', // Новый статус: Ожидает приемки
+        quantity: it.quantity,
+        date: order.date,
+        pricePerUnit: it.price,
+        paymentMethod: 'DEBT',
+        note: `B2B Заказ №${order.id.slice(-4)} у ${shopName}. Название: ${shopP?.name || 'Товар'}`,
+        employeeId: currentUser?.id || 'admin',
+        orderId: order.id
       };
-      updatedCustomers = [newCust, ...customers];
-      finalCustomerId = newCust.id;
-    } else {
-      finalCustomerId = existing.id;
-    }
-  }
+    });
 
-  // 3. Долг — только если в долг
-  if (order.paymentMethod === 'DEBT' && finalCustomerId) {
-    updatedCustomers = updatedCustomers.map(c =>
-      c.id === finalCustomerId
-        ? { ...c, debt: (Number(c.debt) || 0) + order.total }
-        : c
-    );
-  }
-
-  // 4. Создаём продажу
-  const newSale: Sale = {
-    id: `SALE-ORD-${order.id}`,
-    employeeId: currentUser?.id || 'admin',
-    items: order.items.map(it => ({
-      ...it,
-      cost: products.find(p => p.id === it.productId)?.cost || 0
-    })),
-    total: order.total,
-    paymentMethod: order.paymentMethod || 'DEBT',
-    date: new Date().toISOString(),
-    customerId: finalCustomerId
+    setTransactions(prev => [...newTransactions, ...prev]);
   };
 
-  // 5. Добавляем запись в кассу, если ОПЛАЧЕНО
-  if (order.paymentMethod !== 'DEBT') {
-    const cashEntry: CashEntry = {
-      id: `CS-${Date.now()}`,
-      amount: order.total,
-      type: 'INCOME',
-      category: 'Продажа',
-      description: `Продажа №${newSale.id.slice(-4)}`,
-      date: newSale.date,
-      employeeId: newSale.employeeId
+  const handleConfirmOrder = (order: Order) => {
+    setProducts(prev => prev.map(p => {
+      const it = order.items.find(x => x.productId === p.id);
+      return (it && p.type !== 'SERVICE') ? { ...p, quantity: Math.max(0, p.quantity - it.quantity) } : p;
+    }));
+
+    let finalCustomerId = order.customerId;
+    let updatedCustomers = [...customers];
+
+    if (order.note && order.note.includes('[Имя:')) {
+      const matchName = order.note.match(/\[Имя:\s*([^,]+)/);
+      const matchPhone = order.note.match(/Тел:\s*([^\]]+)/);
+      const name = matchName ? matchName[1].trim() : 'Новый клиент';
+      const phone = matchPhone ? matchPhone[1].trim() : '';
+
+      const existing = customers.find(c => (phone && c.phone === phone) || (c.id === order.customerId));
+      if (!existing) {
+        const newCust: Customer = { id: `CUST-${Date.now()}`, name, phone, debt: 0, discount: 0 };
+        updatedCustomers = [newCust, ...customers];
+        finalCustomerId = newCust.id;
+      } else {
+        finalCustomerId = existing.id;
+      }
+    }
+
+    if (order.paymentMethod === 'DEBT' && finalCustomerId) {
+      updatedCustomers = updatedCustomers.map(c => c.id === finalCustomerId ? { ...c, debt: (Number(c.debt) || 0) + order.total } : c);
+    }
+
+    const newSale: Sale = {
+      id: `SALE-ORD-${order.id}`,
+      employeeId: currentUser?.id || 'admin',
+      items: order.items.map(it => ({ ...it, cost: products.find(p => p.id === it.productId)?.cost || 0 })),
+      total: order.total,
+      paymentMethod: order.paymentMethod || 'DEBT',
+      date: new Date().toISOString(),
+      customerId: finalCustomerId
     };
-    setCashEntries(prev => [cashEntry, ...prev]);
-  }
 
-  // 6. Обновляем состояние
-  setOrders(prev => prev.map(o =>
-    o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o
-  ));
-  setCustomers(updatedCustomers);
-  setSales(prev => [newSale, ...prev]);
+    if (order.paymentMethod !== 'DEBT') {
+      const cashEntry: CashEntry = { id: `CS-${Date.now()}`, amount: order.total, type: 'INCOME', category: 'Продажа', description: `Продажа №${newSale.id.slice(-4)}`, date: newSale.date, employeeId: newSale.employeeId };
+      setCashEntries(prev => [cashEntry, ...prev]);
+    }
 
-  alert('Заказ выдан!');
-};
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED', customerId: finalCustomerId } : o));
+    setCustomers(updatedCustomers);
+    setSales(prev => [newSale, ...prev]);
+    alert('Заказ выдан!');
+  };
 
   const renderView = () => {
     if (!currentUser) return null;
@@ -285,6 +283,7 @@ const App: React.FC = () => {
       case 'STOCK_REPORT': return <StockReport products={products}/>;
       case 'TARIFFS': return <Tariffs />;
       case 'TENANT_ADMIN': return <TenantAdmin />;
+      case 'MARKETPLACE': return <ClientPortal user={currentUser} onAddOrder={()=>{}} onB2BPurchaseComplete={handleB2BPurchase}/>;
       case 'SETTINGS': return <Settings settings={settings} onUpdate={setSettings} onClear={() => { if(confirm('Очистить всё?')){ setProducts([]); setTransactions([]); setSales([]); setCashEntries([]); setSuppliers([]); setCustomers([]); setEmployees([]); setOrders([]); setCategories(INITIAL_CATEGORIES); } }} isOwner={isAdmin} userId={currentUser?.id}/>;
       case 'PROFILE': return <Profile user={currentUser as any} sales={sales} onLogout={handleLogout} onUpdateProfile={handleLogin}/>;
       case 'MORE_MENU': return (
@@ -294,6 +293,7 @@ const App: React.FC = () => {
             {isSuperAdmin && (
               <button onClick={() => setView('TENANT_ADMIN')} className="w-full bg-indigo-900 p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-indigo-800 hover:bg-indigo-950 text-white"><div className="w-12 h-12 bg-amber-500 text-white rounded-2xl flex items-center justify-center"><i className="fas fa-crown"></i></div><span className="font-bold">Платформа</span></button>
             )}
+            <button onClick={() => setView('MARKETPLACE')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i className="fas fa-shopping-cart"></i></div><span className="font-bold text-slate-700">Закупки (B2B)</span></button>
             <button onClick={() => setView('ORDERS_MANAGER')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i className="fas fa-clipboard-list"></i></div><span className="font-bold text-slate-700">Заказы клиентов</span></button>
             <button onClick={() => setView('CLIENTS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i className="fas fa-users"></i></div><span className="font-bold text-slate-700">Клиенты</span></button>
             <button onClick={() => setView('SUPPLIERS')} className="w-full bg-white p-5 rounded-3xl shadow-sm flex items-center gap-4 border border-slate-100 hover:bg-slate-50"><div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center"><i className="fas fa-truck"></i></div><span className="font-bold text-slate-700">Поставщики</span></button>
