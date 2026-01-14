@@ -40,6 +40,8 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
   const [cart, setCart] = useState<any[]>([]);
   const [isOrdering, setIsOrdering] = useState(false);
   const [note, setNote] = useState('');
+
+  // Предзаполнение для B2B или обычного клиента
   const [tempName, setTempName] = useState(user.name || '');
   const [tempPhone, setTempPhone] = useState('');
 
@@ -157,7 +159,11 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
     const mySales = shopData.sales.filter(x => !x.isDeleted && (x.customerId === shopData.customerIdInShop || x.customerId === user.id));
     const myPayments = shopData.cashEntries.filter(x => x.type === 'INCOME' && (x.customerId === shopData.customerIdInShop || x.customerId === user.id));
     const myOrders = shopData.orders.filter(x => (x.customerId === shopData.customerIdInShop || x.customerId === user.id) && (x.status === 'NEW' || x.status === 'ACCEPTED' || x.status === 'CANCELLED'));
-    return [...mySales.map(i => ({...i, type: 'SALE'})), ...myPayments.map(i => ({...i, type: 'PAYMENT'})), ...myOrders.map(i => ({...i, type: 'ORDER'}))].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return [
+      ...mySales.map(i => ({...i, type: 'SALE'})),
+      ...myPayments.map(i => ({...i, type: 'PAYMENT'})),
+      ...myOrders.map(i => ({...i, type: 'ORDER'}))
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [shopData, user.id]);
 
   const filteredProducts = useMemo(() => {
@@ -179,8 +185,10 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
 
   const handleSendOrder = async () => {
     if (cart.length === 0 || !activeShopId || !shopData) return;
+
+    // Валидация контактов, если клиент не зарегистрирован в том магазине
     if (!shopData.customerIdInShop && (!tempName.trim() || !tempPhone.trim())) {
-      alert('Пожалуйста, укажите ваши данные');
+      alert('Пожалуйста, укажите ваши данные для связи');
       return;
     }
 
@@ -200,7 +208,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
 
     await db.saveDataOfShop(activeShopId, 'orders', [newOrder, ...shopData.orders]);
 
-    // Если покупатель - сам продавец, автоматизируем его склад
     if (isB2B && onB2BPurchaseComplete) {
       onB2BPurchaseComplete(activeShopId, shopData.settings.shopName, newOrder, shopData.products);
     }
@@ -258,9 +265,10 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
                     <p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p>
                     {op.type === 'ORDER' && <span className={`text-[8px] font-black uppercase inline-block px-1.5 py-0.5 rounded mt-1 ${op.status === 'NEW' ? 'bg-indigo-50 text-indigo-500' : op.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-400'}`}>{op.status === 'NEW' ? 'В обработке' : op.status === 'ACCEPTED' ? 'Принята' : 'Отменена'}</span>}
                   </div>
-                  <div className="flex items-center gap-4"><p className={`font-black text-lg ${op.type === 'PAYMENT' ? 'text-emerald-500' : 'text-slate-800'}`}>{op.type === 'PAYMENT' ? '-' : ''}{(op.amount || op.total).toLocaleString()} ₽</p><i className="fas fa-chevron-right text-[10px] text-slate-200"></i></div>
+                  <div className="flex items-center gap-4"><p className={`font-black text-lg ${op.type === 'PAYMENT' ? 'text-emerald-500' : 'text-slate-800'}`}>{op.type === 'PAYMENT' ? '-' : ''}{(op.amount || op.total || 0).toLocaleString()} ₽</p><i className="fas fa-chevron-right text-[10px] text-slate-200"></i></div>
                 </div>
               ))}
+              {myHistory.length === 0 && <p className="text-center py-20 text-slate-300 italic">Событий нет</p>}
             </div>
           </div>
         )}
@@ -268,11 +276,27 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
         {selectedOpDetail && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-end justify-center p-0" onClick={() => setSelectedOpDetail(null)}>
             <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
-               <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-black text-slate-800">{selectedOpDetail.type === 'SALE' ? 'Детали покупки' : 'Детали заявки'}</h3><p className="text-[10px] text-slate-400 font-black uppercase">№ {selectedOpDetail.id.slice(-6)} • {new Date(selectedOpDetail.date).toLocaleDateString()}</p></div><button onClick={() => setSelectedOpDetail(null)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times"></i></button></div>
-               <div className="space-y-4">
-                  <div className="space-y-2">{selectedOpDetail.items.map((item: any, idx: number) => { const p = shopData.products.find(prod => prod.id === item.productId); return (<div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100"><div><p className="font-bold text-slate-800 text-sm">{p?.name || 'Товар'}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {p?.unit || 'шт'} x {item.price} ₽</p></div><p className="font-black text-slate-800">{(item.quantity * item.price).toLocaleString()} ₽</p></div>); })}</div>
-                  <div className="bg-slate-800 p-6 rounded-[32px] text-white flex justify-between items-center mt-4"><span className="text-[10px] font-black uppercase opacity-60">Итого:</span><span className="text-2xl font-black">{selectedOpDetail.total.toLocaleString()} ₽</span></div>
-               </div>
+               <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-black text-slate-800">{selectedOpDetail.type === 'SALE' ? 'Детали покупки' : (selectedOpDetail.type === 'PAYMENT' ? 'Детали платежа' : 'Детали заявки')}</h3><p className="text-[10px] text-slate-400 font-black uppercase">№ {selectedOpDetail.id.slice(-6)} • {new Date(selectedOpDetail.date).toLocaleDateString()}</p></div><button onClick={() => setSelectedOpDetail(null)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times"></i></button></div>
+
+               {(selectedOpDetail.type === 'SALE' || selectedOpDetail.type === 'ORDER') ? (
+                 <div className="space-y-4">
+                    <div className="space-y-2">{selectedOpDetail.items.map((item: any, idx: number) => { const p = shopData.products.find(prod => prod.id === item.productId); return (<div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100"><div><p className="font-bold text-slate-800 text-sm">{p?.name || 'Товар'}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {p?.unit || 'шт'} x {item.price} ₽</p></div><p className="font-black text-slate-800">{(item.quantity * item.price).toLocaleString()} ₽</p></div>); })}</div>
+                    <div className="bg-slate-800 p-6 rounded-[32px] text-white flex justify-between items-center mt-4"><span className="text-[10px] font-black uppercase opacity-60">Итого:</span><span className="text-2xl font-black">{(selectedOpDetail.total || 0).toLocaleString()} ₽</span></div>
+                 </div>
+               ) : (
+                 <div className="space-y-6">
+                    <div className="bg-emerald-50 p-8 rounded-[40px] border border-emerald-100 text-center">
+                      <p className="text-[10px] font-black text-emerald-400 uppercase mb-2 tracking-widest">Сумма оплаты</p>
+                      <p className="text-5xl font-black text-emerald-600">{(selectedOpDetail.amount || 0).toLocaleString()} ₽</p>
+                    </div>
+                    <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Назначение:</p>
+                      <p className="text-sm font-bold text-slate-700">{selectedOpDetail.category || 'Пополнение счета'}</p>
+                      <p className="text-xs text-slate-400 mt-2">{selectedOpDetail.description || 'Без описания'}</p>
+                    </div>
+                    <button onClick={() => setSelectedOpDetail(null)} className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Закрыть окно</button>
+                 </div>
+               )}
             </div>
           </div>
         )}
@@ -281,15 +305,33 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-end justify-center">
             <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[95vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-black text-slate-800">Оформление</h3><p className="text-xs text-slate-400 font-bold">Подтверждение заказа</p></div><button onClick={() => setIsOrdering(false)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full"><i className="fas fa-times"></i></button></div>
+
+              {/* Карточка контактов (обязательна для новых клиентов и B2B) */}
+              {!shopData?.customerIdInShop && (
+                <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 mb-6 space-y-4">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <i className="fas fa-id-card text-indigo-300"></i>
+                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Контактные данные</p>
+                  </div>
+                  <div className="space-y-3">
+                    <input className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold placeholder:text-slate-300" placeholder="Ваше имя / Название магазина" value={tempName} onChange={e => setTempName(e.target.value)} />
+                    <input className="w-full p-4 bg-white border border-indigo-100 rounded-2xl outline-none text-sm font-bold placeholder:text-slate-300" placeholder="Ваш телефон" type="tel" value={tempPhone} onChange={e => setTempPhone(e.target.value)} />
+                  </div>
+                  {(user.role === 'admin' || user.role === 'superadmin') && (
+                    <p className="text-[8px] text-center text-indigo-400 font-black uppercase opacity-60">Это B2B закупка — данные будут видны поставщику</p>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-3 mb-6">{cart.map(item => (<div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100"><div><p className="font-bold text-slate-800 text-sm">{item.name}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit} x {item.price} ₽</p></div><button onClick={() => setCart(cart.filter(i=>i.productId!==item.productId))} className="text-red-300 p-2"><i className="fas fa-trash-alt"></i></button></div>))}</div>
-              <textarea placeholder="Комментарий к заказу..." className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[24px] text-sm outline-none mb-6 resize-none" rows={2} value={note} onChange={e=>setNote(e.target.value)} />
-              <div className="flex justify-between items-center mb-6 px-2"><span className="text-[10px] font-black text-slate-400 uppercase">Сумма</span><span className="text-2xl font-black text-slate-800">{cartTotal.toLocaleString()} ₽</span></div>
-              <button onClick={handleSendOrder} className="w-full bg-indigo-600 text-white p-6 rounded-[28px] font-black uppercase shadow-xl tracking-widest active:scale-95">ОТПРАВИТЬ ЗАКАЗ</button>
+              <textarea placeholder="Комментарий к заказу (необязательно)..." className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[24px] text-sm outline-none mb-6 resize-none" rows={2} value={note} onChange={e=>setNote(e.target.value)} />
+              <div className="flex justify-between items-center mb-6 px-2"><span className="text-[10px] font-black text-slate-400 uppercase">Сумма к оплате</span><span className="text-2xl font-black text-slate-800">{cartTotal.toLocaleString()} ₽</span></div>
+              <button onClick={handleSendOrder} className="w-full bg-indigo-600 text-white p-6 rounded-[28px] font-black uppercase shadow-xl tracking-widest active:scale-95 transition-all">ОТПРАВИТЬ ЗАКАЗ</button>
             </div>
           </div>
         )}
 
-        <button onClick={() => setActiveShopId(null)} className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-indigo-500">Вернуться к поиску магазинов</button>
+        <button onClick={() => setActiveShopId(null)} className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-indigo-500">Вернуться к списку магазинов</button>
       </div>
     );
   }
