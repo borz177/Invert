@@ -41,7 +41,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
   const [isOrdering, setIsOrdering] = useState(false);
   const [note, setNote] = useState('');
 
-  // Предзаполнение для B2B или обычного клиента
   const [tempName, setTempName] = useState(user.name || '');
   const [tempPhone, setTempPhone] = useState('');
 
@@ -176,8 +175,14 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
     if (!shopData) return { debt: 0, totalPurchased: 0 };
     const sales = shopData.sales.filter(x => !x.isDeleted && (x.customerId === shopData.customerIdInShop || x.customerId === user.id));
     const payments = shopData.cashEntries.filter(x => x.type === 'INCOME' && (x.customerId === shopData.customerIdInShop || x.customerId === user.id));
+
+    // Считаем общую сумму покупок
     const totalPurchased = sales.reduce((acc, i) => acc + i.total, 0);
+
+    // Долг считаем более точно: сумма продаж в долг МИНУС оплаты (за исключением тех, что привязаны к CASH продажам)
+    // Либо классический баланс: Сумма всех продаж (и нал и долг) МИНУС сумма всех входящих оплат (включая автоматические от нал продаж)
     const totalPaid = payments.reduce((acc, i) => acc + i.amount, 0);
+
     return { debt: Math.max(0, totalPurchased - totalPaid), totalPurchased };
   }, [shopData, user.id]);
 
@@ -186,7 +191,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
   const handleSendOrder = async () => {
     if (cart.length === 0 || !activeShopId || !shopData) return;
 
-    // Валидация контактов, если клиент не зарегистрирован в том магазине
     if (!shopData.customerIdInShop && (!tempName.trim() || !tempPhone.trim())) {
       alert('Пожалуйста, укажите ваши данные для связи');
       return;
@@ -253,19 +257,34 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
         ) : (
           <div className="space-y-6 animate-fade-in">
              <div className="grid grid-cols-2 gap-4">
-              <div className="bg-red-50 p-6 rounded-[32px] border border-red-100 text-center"><p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Долг</p><p className="text-2xl font-black text-red-600">{myStats.debt.toLocaleString()} ₽</p></div>
-              <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 text-center"><p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Всего закупок</p><p className="text-2xl font-black text-indigo-600">{myStats.totalPurchased.toLocaleString()} ₽</p></div>
+              <div className="bg-red-50 p-6 rounded-[32px] border border-red-100 text-center"><p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Ваш Долг</p><p className="text-2xl font-black text-red-600">{myStats.debt.toLocaleString()} ₽</p></div>
+              <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 text-center"><p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Всего покупок</p><p className="text-2xl font-black text-indigo-600">{myStats.totalPurchased.toLocaleString()} ₽</p></div>
             </div>
             <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-50">
-              <p className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50">Ваши операции</p>
+              <p className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50">История операций</p>
               {myHistory.map((op: any) => (
-                <div key={op.id} onClick={() => setSelectedOpDetail(op)} className="p-5 flex justify-between items-center active:bg-slate-50 cursor-pointer">
+                <div key={`${op.type}-${op.id}`} onClick={() => setSelectedOpDetail(op)} className="p-5 flex justify-between items-center active:bg-slate-50 cursor-pointer">
                   <div className="min-w-0 flex-1 pr-4">
-                    <p className="font-bold text-slate-800 text-sm">{op.type === 'SALE' ? `Покупка №${op.id.slice(-4)}` : op.type === 'PAYMENT' ? 'Платеж' : 'Заявка'}</p>
+                    <p className="font-bold text-slate-800 text-sm">
+                      {op.type === 'SALE' ? `Покупка №${op.id.slice(-4)}` : op.type === 'PAYMENT' ? 'Платеж' : 'Заявка'}
+                    </p>
                     <p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(op.date).toLocaleDateString()}</p>
-                    {op.type === 'ORDER' && <span className={`text-[8px] font-black uppercase inline-block px-1.5 py-0.5 rounded mt-1 ${op.status === 'NEW' ? 'bg-indigo-50 text-indigo-500' : op.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-400'}`}>{op.status === 'NEW' ? 'В обработке' : op.status === 'ACCEPTED' ? 'Принята' : 'Отменена'}</span>}
+
+                    {/* Визуальная индикация способа оплаты в истории */}
+                    {op.type === 'SALE' && (
+                       <span className={`text-[7px] font-black uppercase inline-block px-1.5 py-0.5 rounded mt-1.5 ${op.paymentMethod === 'DEBT' ? 'bg-red-50 text-red-500' : 'bg-emerald-50 text-emerald-600'}`}>
+                         {op.paymentMethod === 'DEBT' ? 'В долг' : 'Оплачено'}
+                       </span>
+                    )}
+
+                    {op.type === 'ORDER' && <span className={`text-[8px] font-black uppercase inline-block px-1.5 py-0.5 rounded mt-1 ${op.status === 'NEW' ? 'bg-indigo-50 text-indigo-500' : op.status === 'ACCEPTED' ? 'bg-amber-50 text-amber-500' : op.status === 'CANCELLED' ? 'bg-red-50 text-red-400' : 'bg-emerald-50 text-emerald-500'}`}>{op.status === 'NEW' ? 'В обработке' : op.status === 'ACCEPTED' ? 'Принята' : op.status === 'CANCELLED' ? 'Отменена' : 'Выполнена'}</span>}
                   </div>
-                  <div className="flex items-center gap-4"><p className={`font-black text-lg ${op.type === 'PAYMENT' ? 'text-emerald-500' : 'text-slate-800'}`}>{op.type === 'PAYMENT' ? '-' : ''}{(op.amount || op.total || 0).toLocaleString()} ₽</p><i className="fas fa-chevron-right text-[10px] text-slate-200"></i></div>
+                  <div className="flex items-center gap-4">
+                    <p className={`font-black text-lg ${op.type === 'PAYMENT' ? 'text-emerald-500' : 'text-slate-800'}`}>
+                      {op.type === 'PAYMENT' ? '-' : ''}{(op.amount || op.total || 0).toLocaleString()} ₽
+                    </p>
+                    <i className="fas fa-chevron-right text-[10px] text-slate-200"></i>
+                  </div>
                 </div>
               ))}
               {myHistory.length === 0 && <p className="text-center py-20 text-slate-300 italic">Событий нет</p>}
@@ -276,10 +295,16 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
         {selectedOpDetail && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-end justify-center p-0" onClick={() => setSelectedOpDetail(null)}>
             <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
-               <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-black text-slate-800">{selectedOpDetail.type === 'SALE' ? 'Детали покупки' : (selectedOpDetail.type === 'PAYMENT' ? 'Детали платежа' : 'Детали заявки')}</h3><p className="text-[10px] text-slate-400 font-black uppercase">№ {selectedOpDetail.id.slice(-6)} • {new Date(selectedOpDetail.date).toLocaleDateString()}</p></div><button onClick={() => setSelectedOpDetail(null)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times"></i></button></div>
+               <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-black text-slate-800">{selectedOpDetail.type === 'SALE' ? 'Детали покупки' : (selectedOpDetail.type === 'PAYMENT' ? 'Детали платежа' : 'Детали заявки')}</h3><p className="text-[10px] text-slate-400 font-black uppercase">№ {selectedOpDetail.id.slice(-6)} • {new Date(selectedOpDetail.date).toLocaleString()}</p></div><button onClick={() => setSelectedOpDetail(null)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times"></i></button></div>
 
                {(selectedOpDetail.type === 'SALE' || selectedOpDetail.type === 'ORDER') ? (
                  <div className="space-y-4">
+                    {selectedOpDetail.paymentMethod && (
+                      <div className={`p-4 rounded-2xl flex items-center justify-between ${selectedOpDetail.paymentMethod === 'DEBT' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                        <span className="text-[10px] font-black uppercase">Статус платежа:</span>
+                        <span className="font-black uppercase text-xs">{selectedOpDetail.paymentMethod === 'DEBT' ? 'Оформлено в долг' : 'Оплачено сразу'}</span>
+                      </div>
+                    )}
                     <div className="space-y-2">{selectedOpDetail.items.map((item: any, idx: number) => { const p = shopData.products.find(prod => prod.id === item.productId); return (<div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100"><div><p className="font-bold text-slate-800 text-sm">{p?.name || 'Товар'}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {p?.unit || 'шт'} x {item.price} ₽</p></div><p className="font-black text-slate-800">{(item.quantity * item.price).toLocaleString()} ₽</p></div>); })}</div>
                     <div className="bg-slate-800 p-6 rounded-[32px] text-white flex justify-between items-center mt-4"><span className="text-[10px] font-black uppercase opacity-60">Итого:</span><span className="text-2xl font-black">{(selectedOpDetail.total || 0).toLocaleString()} ₽</span></div>
                  </div>
@@ -303,10 +328,9 @@ const ClientPortal: React.FC<ClientPortalProps> = ({
 
         {isOrdering && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-end justify-center">
-            <div className="bg-white w-full max-w-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[95vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
+            <div className="bg-white w-full max-lg rounded-t-[40px] shadow-2xl p-8 flex flex-col animate-slide-up max-h-[95vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-black text-slate-800">Оформление</h3><p className="text-xs text-slate-400 font-bold">Подтверждение заказа</p></div><button onClick={() => setIsOrdering(false)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full"><i className="fas fa-times"></i></button></div>
 
-              {/* Карточка контактов (обязательна для новых клиентов и B2B) */}
               {!shopData?.customerIdInShop && (
                 <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100 mb-6 space-y-4">
                   <div className="flex items-center justify-center gap-2 mb-1">
