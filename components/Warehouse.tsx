@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Product, Transaction, Supplier, CashEntry } from '../types';
+import { db } from '../services/api';
 
 interface WarehouseProps {
   products: Product[];
@@ -31,6 +32,18 @@ const Warehouse: React.FC<WarehouseProps> = ({
   const [inputQty, setInputQty] = useState<number>(1);
   const [inputCost, setInputCost] = useState<number>(0);
 
+  // B2B Приемка
+  const [selectedB2BOrderId, setSelectedB2BOrderId] = useState<string | null>(null);
+  const [productMappings, setProductMappings] = useState<Record<string, string>>({}); // { supplierId_remoteId: localId }
+  // Fix: Updated type definition for b2bItemSettings to include remoteName and remoteProductId
+  const [b2bItemSettings, setB2BItemSettings] = useState<Record<string, {
+    localId: string,
+    category: string,
+    rename: string,
+    remoteName: string,
+    remoteProductId: string
+  }>>({});
+
   const [showNewProductForm, setShowNewProductForm] = useState(false);
   const [newProd, setNewProd] = useState({
     name: '',
@@ -40,11 +53,93 @@ const Warehouse: React.FC<WarehouseProps> = ({
     unit: 'шт' as any
   });
 
+  // Загрузка маппингов из БД
+  useEffect(() => {
+    const loadMappings = async () => {
+      const saved = await db.getData('b2b_mappings');
+      if (saved) setProductMappings(saved);
+    };
+    loadMappings();
+  }, []);
+
   useEffect(() => {
     if (suppliers.length > 0 && !selectedSupplier) {
       setSelectedSupplier(suppliers[0].id);
     }
   }, [suppliers]);
+
+  // Fix: Added missing handlers
+  const openAddItem = (p: Product) => {
+    setActiveItem(p);
+    setInputQty(1);
+    setInputCost(p.cost || 0);
+  };
+
+  const confirmAddToDoc = () => {
+    if (!activeItem) return;
+    const newItem = {
+      productId: activeItem.id,
+      name: activeItem.name,
+      quantity: inputQty,
+      cost: inputCost,
+      unit: activeItem.unit
+    };
+    setBatch(prev => [...prev, newItem]);
+    setActiveItem(null);
+    setIsDocOpen(true);
+  };
+
+  const handlePostDocument = () => {
+    if (batch.length === 0) return;
+    if (!selectedSupplier) {
+      alert('Выберите поставщика');
+      return;
+    }
+
+    const newTransactions: Transaction[] = batch.map(item => ({
+      id: `TR-IN-${Date.now()}-${item.productId}`,
+      productId: item.productId,
+      supplierId: selectedSupplier,
+      type: 'IN',
+      quantity: item.quantity,
+      date: receiptDate + 'T' + new Date().toISOString().split('T')[1],
+      pricePerUnit: item.cost,
+      paymentMethod: paymentMethod,
+      note: `Приход на склад. Поставщик: ${suppliers.find(s => s.id === selectedSupplier)?.name || '---'}`,
+      employeeId: 'admin'
+    }));
+
+    onTransactionsBulk(newTransactions);
+    setBatch([]);
+    setIsDocOpen(false);
+    alert('Приход успешно проведен!');
+  };
+
+  const handleCreateProduct = (e: React.FormEvent) => {
+    e.preventDefault();
+    const product: Product = {
+      id: `P-${Date.now()}`,
+      name: newProd.name,
+      sku: `SKU-${Math.floor(Math.random() * 10000)}`,
+      price: newProd.price,
+      cost: newProd.cost,
+      quantity: 0,
+      category: newProd.category,
+      minStock: 5,
+      unit: newProd.unit,
+      type: 'PRODUCT'
+    };
+    onAddProduct(product);
+    setShowNewProductForm(false);
+    setNewProd({
+      name: '',
+      category: categories[0] || 'Другое',
+      price: 0,
+      cost: 0,
+      unit: 'шт'
+    });
+    alert('Товар создан');
+  };
 
   const filteredProducts = useMemo(() => {
     let result = products.filter(p => p.type !== 'SERVICE');
@@ -56,94 +151,125 @@ const Warehouse: React.FC<WarehouseProps> = ({
     return result;
   }, [selectedCategory, searchTerm, products]);
 
-  const externalPurchases = useMemo(() => {
-    return transactions.filter(t => t.type === 'PENDING_IN');
+  // Группировка ожидаемых B2B поставок по ID заказа
+  const externalOrders = useMemo(() => {
+    const pending = transactions.filter(t => t.type === 'PENDING_IN');
+    const groups: Record<string, { orderId: string, supplierId: string, date: string, items: Transaction[], total: number }> = {};
+
+    pending.forEach(t => {
+      const oId = t.orderId || 'no-id';
+      if (!groups[oId]) {
+        groups[oId] = {
+          orderId: oId,
+          supplierId: t.supplierId || '',
+          date: t.date,
+          items: [],
+          total: 0
+        };
+      }
+      groups[oId].items.push(t);
+      groups[oId].total += t.quantity * (t.pricePerUnit || 0);
+    });
+
+    return Object.values(groups).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions]);
 
-  const openAddItem = (p: Product) => {
-    setActiveItem(p);
-    setInputQty(1);
-    setInputCost(p.cost);
+  const openB2BOrder = (orderId: string) => {
+    const order = externalOrders.find(o => o.orderId === orderId);
+    if (!order) return;
+
+    // Подготавливаем настройки для каждого товара в заказе
+    const initialSettings: any = {};
+    order.items.forEach(item => {
+      const mappingKey = `${order.supplierId}_${item.productId}`;
+      const existingMapping = productMappings[mappingKey];
+
+      // Извлекаем имя из заметки (было сохранено в App.tsx)
+      const remoteNameMatch = item.note.match(/Название:\s*(.*)/);
+      const remoteName = remoteNameMatch ? remoteNameMatch[1] : 'Товар';
+
+      initialSettings[item.id] = {
+        localId: existingMapping || '', // Если есть маппинг, привязываем
+        category: categories[0] || 'Другое',
+        rename: remoteName,
+        remoteName: remoteName,
+        remoteProductId: item.productId
+      };
+    });
+
+    setB2BItemSettings(initialSettings);
+    setSelectedB2BOrderId(orderId);
   };
 
-  const confirmAddToDoc = () => {
-    if (!activeItem) return;
-    const existing = batch.find(b => b.productId === activeItem.id);
-    if (existing) {
-      setBatch(batch.map(b => b.productId === activeItem.id ? { ...b, quantity: b.quantity + inputQty, cost: inputCost } : b));
-    } else {
-      setBatch([...batch, { productId: activeItem.id, name: activeItem.name, quantity: inputQty, cost: inputCost, unit: activeItem.unit }]);
-    }
-    setActiveItem(null);
-  };
+  const handleConfirmB2BReceipt = async () => {
+    const order = externalOrders.find(o => o.orderId === selectedB2BOrderId);
+    if (!order) return;
 
-  const handleCreateProduct = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newId = `P-${Date.now()}`;
-    const product: Product = {
-      id: newId,
-      name: newProd.name,
-      sku: `SKU-${Math.floor(Math.random() * 10000)}`,
-      category: newProd.category,
-      price: newProd.price,
-      cost: newProd.cost,
-      quantity: 0,
-      minStock: 5,
-      unit: newProd.unit,
-      type: 'PRODUCT'
-    };
-    onAddProduct(product);
-    setBatch([...batch, { productId: newId, name: product.name, quantity: 1, cost: product.cost, unit: product.unit }]);
-    setShowNewProductForm(false);
-    setNewProd({ name: '', category: categories[0] || 'Другое', price: 0, cost: 0, unit: 'шт' });
-  };
+    const newTransactions: Transaction[] = [];
+    const newMappings = { ...productMappings };
+    const itemsToCreate: Product[] = [];
 
-  const handlePostDocument = () => {
-    if (batch.length === 0) return;
-    if (!selectedSupplier) { alert('Выберите поставщика!'); return; }
+    for (const item of order.items) {
+      const settings = b2bItemSettings[item.id];
+      let finalLocalId = settings.localId;
 
-    const batchId = `BATCH-${Date.now()}`;
-    const supplier = suppliers.find(s => s.id === selectedSupplier);
+      // Если товара нет в локальной базе, создаем новый
+      if (!finalLocalId) {
+        finalLocalId = `P-B2B-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+        const newProduct: Product = {
+          id: finalLocalId,
+          name: settings.rename || settings.remoteName,
+          sku: `B2B-${Math.floor(Math.random() * 10000)}`,
+          category: settings.category,
+          price: (item.pricePerUnit || 0) * 1.5, // Наценка 50% по умолчанию
+          cost: item.pricePerUnit || 0,
+          quantity: 0, // Увеличится через транзакцию
+          minStock: 5,
+          unit: 'шт',
+          type: 'PRODUCT'
+        };
+        itemsToCreate.push(newProduct);
+        onAddProduct(newProduct);
 
-    const ts: Transaction[] = batch.map(item => ({
-      id: `TR-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      productId: item.productId,
-      supplierId: selectedSupplier,
-      type: 'IN',
-      quantity: item.quantity,
-      pricePerUnit: item.cost,
-      paymentMethod,
-      date: receiptDate + 'T' + new Date().toLocaleTimeString('en-GB'),
-      note: `Приход. Поставщик: ${supplier?.name}`,
-      employeeId: 'admin',
-      batchId
-    }));
+        // Запоминаем связь для будущего
+        const mappingKey = `${order.supplierId}_${settings.remoteProductId}`;
+        newMappings[mappingKey] = finalLocalId;
+      } else {
+        // Если привязан к существующему, просто запоминаем связь (обновляем если сменили)
+        const mappingKey = `${order.supplierId}_${settings.remoteProductId}`;
+        newMappings[mappingKey] = finalLocalId;
+      }
 
-    if (paymentMethod === 'CASH' && onAddCashEntry) {
-      const totalCost = batch.reduce((acc, i) => acc + (i.quantity * i.cost), 0);
-      onAddCashEntry({
-        amount: totalCost,
-        type: 'EXPENSE',
-        category: 'Закуп товара',
-        description: `Оплата поставщику ${supplier?.name}`,
-        supplierId: selectedSupplier
+      // Создаем реальную транзакцию прихода
+      newTransactions.push({
+        ...item,
+        id: `TR-B2B-IN-${Date.now()}-${item.id}`,
+        type: 'IN',
+        productId: finalLocalId,
+        note: `B2B Приемка. Заказ №${order.orderId.slice(-4)}. Поставщик: ${suppliers.find(s=>s.id===order.supplierId)?.name}`
       });
     }
 
-    onTransactionsBulk(ts);
-    setBatch([]);
-    setIsDocOpen(false);
-    alert('Оприходование завершено успешно!');
+    // Сохраняем новые связи в БД
+    await db.saveData('b2b_mappings', newMappings);
+    setProductMappings(newMappings);
+
+    // Проводим транзакции
+    // Сначала удаляем PENDING_IN (в реальной системе это должно быть атомарно, тут через bulk)
+    const remainingTransactions = transactions.filter(t => t.orderId !== selectedB2BOrderId);
+    onTransactionsBulk([...remainingTransactions, ...newTransactions]);
+
+    setSelectedB2BOrderId(null);
+    alert('Товары успешно приняты на склад!');
   };
 
   const totalSum = batch.reduce((acc, i) => acc + (i.quantity * i.cost), 0);
 
   return (
     <div className="flex flex-col h-full space-y-4 pb-24">
-      {/* Вкладки: Ручной ввод / Маркетплейс */}
       <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-slate-100">
         <button onClick={() => setWarehouseTab('MANUAL')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${warehouseTab === 'MANUAL' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>Приемка</button>
-        <button onClick={() => setWarehouseTab('EXTERNAL')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${warehouseTab === 'EXTERNAL' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>B2B Закупки {externalPurchases.length > 0 && <span className="bg-red-500 text-white px-1.5 py-0.5 rounded ml-1">{externalPurchases.length}</span>}</button>
+        <button onClick={() => setWarehouseTab('EXTERNAL')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${warehouseTab === 'EXTERNAL' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>B2B Закупки {externalOrders.length > 0 && <span className="bg-red-500 text-white px-1.5 py-0.5 rounded ml-1">{externalOrders.length}</span>}</button>
       </div>
 
       {warehouseTab === 'MANUAL' ? (
@@ -194,35 +320,107 @@ const Warehouse: React.FC<WarehouseProps> = ({
         <div className="space-y-4 pb-20">
           <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100">
             <h4 className="font-black text-indigo-900 text-sm uppercase">Ожидаемые поставки</h4>
-            <p className="text-[10px] text-indigo-400 font-bold uppercase mt-1">Заказы, сделанные у других магазинов</p>
+            <p className="text-[10px] text-indigo-400 font-bold uppercase mt-1">Сгруппировано по заказам</p>
           </div>
           <div className="space-y-3">
-            {externalPurchases.map(t => (
-              <div key={t.id} className="bg-white p-5 rounded-[32px] border border-slate-100 shadow-sm flex justify-between items-center">
+            {externalOrders.map(order => (
+              <div key={order.orderId} onClick={() => openB2BOrder(order.orderId)} className="bg-white p-5 rounded-[32px] border border-slate-100 shadow-sm flex justify-between items-center cursor-pointer active:bg-slate-50 transition-colors">
                 <div className="min-w-0 pr-4">
-                  <p className="font-bold text-slate-800 text-sm truncate">{t.note.split('. ').pop()}</p>
-                  <p className="text-[9px] text-slate-400 font-black uppercase mt-1">Поставщик: {suppliers.find(s=>s.id===t.supplierId)?.name || 'Маркетплейс'}</p>
-                  <p className="text-[9px] font-black text-indigo-500 mt-0.5">Сумма: {(t.quantity * (t.pricePerUnit || 0)).toLocaleString()} ₽</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                    <p className="font-black text-slate-800 text-sm truncate">Заказ №{order.orderId.slice(-4)}</p>
+                  </div>
+                  <p className="text-[9px] text-slate-400 font-black uppercase">От: {suppliers.find(s=>s.id===order.supplierId)?.name || 'Магазин'}</p>
+                  <p className="text-[9px] font-black text-indigo-500 mt-1">{order.items.length} поз. • {order.total.toLocaleString()} ₽</p>
                 </div>
-                <button className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-[8px] font-black uppercase shadow-lg active:scale-95" onClick={() => alert('В демо: при приемке этот товар должен быть сопоставлен с вашим каталогом или создан как новый.')}>Принять</button>
+                <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-slate-300">
+                  <i className="fas fa-chevron-right text-xs"></i>
+                </div>
               </div>
             ))}
-            {externalPurchases.length === 0 && <div className="py-20 text-center text-slate-300 italic text-sm">Внешних заказов пока нет</div>}
+            {externalOrders.length === 0 && <div className="py-20 text-center text-slate-300 italic text-sm">Внешних заказов пока нет</div>}
           </div>
         </div>
       )}
 
-      {/* Плавающая корзина прихода */}
-      {batch.length > 0 && warehouseTab === 'MANUAL' && (
-        <div className="fixed bottom-24 left-4 right-4 z-[80] animate-slide-up">
-          <button onClick={() => setIsDocOpen(true)} className="w-full bg-slate-800 text-white p-5 rounded-[32px] shadow-2xl flex justify-between items-center">
-            <div className="flex items-center gap-4"><div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center font-black">{batch.length}</div><div><p className="text-[10px] font-black uppercase opacity-60">Новое поступление</p><p className="text-lg font-black">{totalSum.toLocaleString()} ₽</p></div></div>
-            <div className="bg-indigo-600 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">Просмотр</div>
-          </button>
+      {/* Модальное окно приемки B2B */}
+      {selectedB2BOrderId && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full max-w-2xl rounded-t-[40px] sm:rounded-[40px] shadow-2xl p-6 flex flex-col max-h-[95vh] animate-slide-up overflow-hidden">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-xl font-black text-slate-800">Приемка B2B заказа</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Сопоставление товаров со складом</p>
+              </div>
+              <button onClick={() => setSelectedB2BOrderId(null)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center"><i className="fas fa-times text-xl"></i></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-6 pr-1">
+              {externalOrders.find(o => o.orderId === selectedB2BOrderId)?.items.map(item => {
+                const settings = b2bItemSettings[item.id];
+                if (!settings) return null;
+
+                return (
+                  <div key={item.id} className="p-5 bg-slate-50 rounded-[30px] border border-slate-100 space-y-4">
+                    <div className="flex justify-between items-start">
+                      <div className="min-w-0 pr-4">
+                        <p className="text-[9px] font-black text-indigo-400 uppercase mb-1">Товар поставщика:</p>
+                        <p className="font-bold text-slate-800 text-sm leading-tight">{settings.remoteName}</p>
+                        <p className="text-[10px] text-slate-400 font-bold mt-1">{item.quantity} шт • {item.pricePerUnit} ₽</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[9px] font-black text-slate-300 uppercase mb-1">Действие:</p>
+                        <select
+                          className={`p-2 rounded-xl text-[10px] font-black uppercase outline-none border transition-all ${settings.localId ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-white border-slate-200 text-indigo-600'}`}
+                          value={settings.localId}
+                          onChange={e => setB2BItemSettings({...b2bItemSettings, [item.id]: { ...settings, localId: e.target.value }})}
+                        >
+                          <option value="">+ Создать новый</option>
+                          <optgroup label="Ваш склад">
+                            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </optgroup>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200/50">
+                      {!settings.localId ? (
+                        <>
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Как назвать у себя</label>
+                            <input className="w-full p-3 bg-white border border-slate-200 rounded-xl text-xs font-bold" value={settings.rename} onChange={e => setB2BItemSettings({...b2bItemSettings, [item.id]: { ...settings, rename: e.target.value }})} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Категория на складе</label>
+                            <select className="w-full p-3 bg-white border border-slate-200 rounded-xl text-xs font-bold" value={settings.category} onChange={e => setB2BItemSettings({...b2bItemSettings, [item.id]: { ...settings, category: e.target.value }})}>
+                              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="col-span-2 py-1 flex items-center gap-2">
+                           <i className="fas fa-link text-emerald-500 text-xs"></i>
+                           <p className="text-[10px] font-bold text-emerald-600">Связан с локальным товаром: {products.find(p=>p.id===settings.localId)?.name}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex flex-col gap-3">
+               <div className="flex justify-between items-center px-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Итог заказа</span>
+                  <span className="text-2xl font-black text-slate-800">{externalOrders.find(o=>o.orderId===selectedB2BOrderId)?.total.toLocaleString()} ₽</span>
+               </div>
+               <button onClick={handleConfirmB2BReceipt} className="w-full bg-indigo-600 text-white p-5 rounded-[24px] font-black uppercase shadow-xl shadow-indigo-100 active:scale-95 transition-all">ПРИНЯТЬ ВСЁ НА СКЛАД</button>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Модалки (AddItem, NewProduct, DocOpen) – без изменений, но закрыты условиями или переиспользованы */}
+      {/* Модалки ручной приемки */}
       {activeItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
           <div className="bg-white w-full max-sm rounded-[40px] shadow-2xl p-8 space-y-6">
