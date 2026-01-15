@@ -8,6 +8,7 @@ interface WarehouseProps {
   suppliers: Supplier[];
   transactions: Transaction[];
   categories: string[];
+  // Fix: batch item type must match and setBatch must be a Dispatch function to be callable
   batch: Array<{productId: string, name: string, quantity: number, cost: number, unit: string}>;
   setBatch: React.Dispatch<React.SetStateAction<Array<{productId: string, name: string, quantity: number, cost: number, unit: string}>>>;
   onTransaction: (t: Transaction) => void;
@@ -38,7 +39,8 @@ const Warehouse: React.FC<WarehouseProps> = ({
   // B2B Приемка
   const [selectedB2BOrderId, setSelectedB2BOrderId] = useState<string | null>(null);
   const [b2bPaymentMethod, setB2BPaymentMethod] = useState<'CASH' | 'DEBT'>('DEBT');
-  const [productMappings, setProductMappings] = useState<Record<string, string>>({}); // { supplierId_remoteId: localId }
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [productMappings, setProductMappings] = useState<Record<string, string>>({});
   const [b2bItemSettings, setB2BItemSettings] = useState<Record<string, {
     localId: string,
     category: string,
@@ -56,7 +58,6 @@ const Warehouse: React.FC<WarehouseProps> = ({
     unit: 'шт' as any
   });
 
-  // Загрузка маппингов из БД
   useEffect(() => {
     const loadMappings = async () => {
       const saved = await db.getData('b2b_mappings');
@@ -86,7 +87,8 @@ const Warehouse: React.FC<WarehouseProps> = ({
       cost: inputCost,
       unit: activeItem.unit
     };
-    setBatch(prev => [...prev, newItem]);
+    // Fix: setBatch is now correctly typed as a Dispatch function
+    setBatch(prev => Array.isArray(prev) ? [...prev, newItem] : [newItem]);
     setActiveItem(null);
     setIsDocOpen(true);
   };
@@ -112,6 +114,7 @@ const Warehouse: React.FC<WarehouseProps> = ({
     }));
 
     onTransactionsBulk(newTransactions);
+    // Fix: setBatch is correctly typed and callable
     setBatch([]);
     setIsDocOpen(false);
     alert('Приход успешно проведен!');
@@ -153,7 +156,6 @@ const Warehouse: React.FC<WarehouseProps> = ({
     return result;
   }, [selectedCategory, searchTerm, products]);
 
-  // Группировка ожидаемых B2B поставок по ID заказа
   const externalOrders = useMemo(() => {
     const pending = transactions.filter(t => t.type === 'PENDING_IN');
     const groups: Record<string, { orderId: string, supplierId: string, date: string, items: Transaction[], total: number }> = {};
@@ -176,17 +178,29 @@ const Warehouse: React.FC<WarehouseProps> = ({
     return Object.values(groups).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions]);
 
-  const openB2BOrder = (orderId: string) => {
+  const openB2BOrder = async (orderId: string) => {
     const orderGroup = externalOrders.find(o => o.orderId === orderId);
     if (!orderGroup) return;
 
-    // Синхронизация метода оплаты от поставщика
-    const remoteOrder = orders.find(o => o.id === orderId);
-    if (remoteOrder?.paymentMethod) {
-      setB2BPaymentMethod(remoteOrder.paymentMethod === 'DEBT' ? 'DEBT' : 'CASH');
-    } else {
-      setB2BPaymentMethod('DEBT');
+    setIsSyncing(true);
+    let remotePaymentMethod: 'CASH' | 'DEBT' = 'DEBT';
+
+    try {
+      // КРИТИЧЕСКИЙ ШАГ: Запрашиваем данные напрямую из магазина поставщика
+      const remoteOrders = await db.getDataOfShop(orderGroup.supplierId, 'orders');
+      if (Array.isArray(remoteOrders)) {
+        const matchingOrder = remoteOrders.find((o: any) => o.id === orderId);
+        if (matchingOrder && matchingOrder.paymentMethod) {
+          remotePaymentMethod = matchingOrder.paymentMethod === 'DEBT' ? 'DEBT' : 'CASH';
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to sync remote order payment method", e);
+    } finally {
+      setIsSyncing(false);
     }
+
+    setB2BPaymentMethod(remotePaymentMethod);
 
     const initialSettings: any = {};
     orderGroup.items.forEach(item => {
@@ -247,19 +261,15 @@ const Warehouse: React.FC<WarehouseProps> = ({
         id: `TR-B2B-IN-${Date.now()}-${item.id}`,
         type: 'IN',
         productId: finalLocalId,
-        // FIX: corrected variable name from b2BPaymentMethod to b2bPaymentMethod
-        paymentMethod: b2bPaymentMethod, // Используем актуальный метод
+        paymentMethod: b2bPaymentMethod,
         note: `B2B Приемка. Заказ №${orderGroup.orderId.slice(-4)}. Поставщик: ${suppliers.find(s=>s.id===orderGroup.supplierId)?.name}`
       });
 
-      // ⚠️ КРИТИЧНО: Удаляем старую "ожидаемую" транзакцию
       onDeleteTransaction(item.id);
     }
 
     await db.saveData('b2b_mappings', newMappings);
     setProductMappings(newMappings);
-
-    // Добавляем новые транзакции (остатки и долги обновятся в App.tsx)
     onTransactionsBulk(newTransactions);
 
     setSelectedB2BOrderId(null);
@@ -361,16 +371,19 @@ const Warehouse: React.FC<WarehouseProps> = ({
             <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-6 pr-1">
               {/* Статус оплаты */}
               <div className="bg-indigo-50 p-5 rounded-3xl border border-indigo-100">
-                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center mb-3">Способ оплаты (как учесть этот приход)</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {/* FIX: corrected condition variable name from b2BPaymentMethod to b2bPaymentMethod */}
-                  <button onClick={() => setB2BPaymentMethod('CASH')} className={`py-3 rounded-2xl font-black text-[10px] uppercase transition-all border-2 ${b2bPaymentMethod === 'CASH' ? 'bg-emerald-500 border-emerald-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>Оплачено</button>
-                  <button onClick={() => setB2BPaymentMethod('DEBT')} className={`py-3 rounded-2xl font-black text-[10px] uppercase transition-all border-2 ${b2bPaymentMethod === 'DEBT' ? 'bg-red-500 border-red-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>В долг</button>
-                </div>
-                {orders.find(o => o.id === selectedB2BOrderId)?.paymentMethod && (
-                   <p className="text-[8px] text-center text-indigo-400 font-bold uppercase mt-2 opacity-70">
-                     * Выбор отправителя: {orders.find(o => o.id === selectedB2BOrderId)?.paymentMethod === 'CASH' ? 'ОПЛАЧЕНО' : 'В ДОЛГ'}
-                   </p>
+                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center mb-3">Способ оплаты (актуальные данные поставщика)</p>
+                {isSyncing ? (
+                  <div className="flex justify-center py-2"><i className="fas fa-sync fa-spin text-indigo-600"></i></div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={() => setB2BPaymentMethod('CASH')} className={`py-3 rounded-2xl font-black text-[10px] uppercase transition-all border-2 ${b2bPaymentMethod === 'CASH' ? 'bg-emerald-50 border-emerald-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>Оплачено</button>
+                      <button onClick={() => setB2BPaymentMethod('DEBT')} className={`py-3 rounded-2xl font-black text-[10px] uppercase transition-all border-2 ${b2bPaymentMethod === 'DEBT' ? 'bg-red-500 border-red-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>В долг</button>
+                    </div>
+                    <p className="text-[8px] text-center text-indigo-400 font-bold uppercase mt-2 opacity-70">
+                       * Данные синхронизированы из базы поставщика
+                    </p>
+                  </>
                 )}
               </div>
 
@@ -461,6 +474,7 @@ const Warehouse: React.FC<WarehouseProps> = ({
                 <button onClick={() => setPaymentMethod('CASH')} className={`p-4 rounded-2xl border-2 transition-all font-black text-[10px] uppercase ${paymentMethod === 'CASH' ? 'bg-emerald-50 border-emerald-500 text-emerald-600' : 'bg-white border-slate-100 text-slate-400'}`}>Оплачено</button>
                 <button onClick={() => setPaymentMethod('DEBT')} className={`p-4 rounded-2xl border-2 transition-all font-black text-[10px] uppercase ${paymentMethod === 'DEBT' ? 'bg-red-50 border-red-500 text-red-600' : 'bg-white border-slate-100 text-slate-400'}`}>В долг</button>
               </div>
+              {/* Fix: setBatch is correctly typed and callable */}
               {batch.map(item => (<div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="min-w-0 flex-1 pr-4"><p className="font-bold text-slate-800 text-sm truncate">{item.name}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit} x {item.cost} ₽</p></div><button onClick={() => setBatch(batch.filter(b => b.productId !== item.productId))} className="text-red-300 ml-3"><i className="fas fa-trash-alt"></i></button></div>))}
             </div>
             <div className="pt-4 border-t border-slate-100 space-y-4"><div className="flex justify-between items-end px-2"><span className="text-[10px] font-black text-slate-400 uppercase">Итого</span><span className="text-3xl font-black text-slate-800">{totalSum.toLocaleString()} ₽</span></div><button onClick={handlePostDocument} className="w-full bg-indigo-600 text-white p-5 rounded-[24px] font-black uppercase shadow-xl">ПРОВЕСТИ ПРИХОД</button></div>
