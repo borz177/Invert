@@ -226,7 +226,7 @@ const Warehouse: React.FC<WarehouseProps> = ({
     const orderGroup = externalOrders.find(o => o.orderId === selectedB2BOrderId);
     if (!orderGroup) return;
 
-    const commonBatchId = `B2B-BATCH-${Date.now()}`;
+    const commonBatchId = `B2B-BATCH-${orderGroup.orderId}`;
     const newTransactions: Transaction[] = [];
     const newMappings = { ...productMappings };
 

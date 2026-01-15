@@ -181,6 +181,8 @@ const App: React.FC = () => {
       return prev;
     });
 
+    const commonBatchId = `B2B-PENDING-${order.id}`;
+
     const newTransactions: Transaction[] = order.items.map(it => {
       const shopP = shopProducts.find(p => p.id === it.productId);
       return {
@@ -194,7 +196,8 @@ const App: React.FC = () => {
         paymentMethod: undefined,
         note: `B2B Заказ №${order.id.slice(-4)} у ${shopName}. Название: ${shopP?.name || 'Товар'}`,
         employeeId: currentUser?.id || 'admin',
-        orderId: order.id
+        orderId: order.id,
+        batchId: commonBatchId
       };
     });
 
@@ -273,7 +276,6 @@ const App: React.FC = () => {
         const productUpdates: any = {};
         const supplierUpdates: any = {};
 
-        // Группировка наличных оплат по партиям (один batchId = одна запись в кассе)
         const batchCashMap: Record<string, { amount: number, supplierId?: string, employeeId: string, date: string, itemsCount: number }> = {};
 
         ts.forEach(t => {
@@ -292,7 +294,6 @@ const App: React.FC = () => {
           }
         });
 
-        // Создаем записи в кассе (по одной на каждую партию)
         const newCashEntries: CashEntry[] = Object.values(batchCashMap).map((b, idx) => ({
           id: `CS-IN-BATCH-${Date.now()}-${idx}`,
           amount: b.amount,
