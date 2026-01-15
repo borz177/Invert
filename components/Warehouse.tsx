@@ -224,63 +224,64 @@ const Warehouse: React.FC<WarehouseProps> = ({
   };
 
   const handleConfirmB2BReceipt = async () => {
-    const orderGroup = externalOrders.find(o => o.orderId === selectedB2BOrderId);
-    if (!orderGroup || !onConfirmB2BArrivalBulk) return;
+  const orderGroup = externalOrders.find(o => o.orderId === selectedB2BOrderId);
+  if (!orderGroup || !onConfirmB2BArrivalBulk) return;
 
-    const commonBatchId = `B2B-BATCH-${orderGroup.orderId}`;
-    const finalTransactions: Transaction[] = [];
-    const newProds: Product[] = [];
-    const pendingIdsToDelete: string[] = [];
-    const newMappings = { ...productMappings };
+  const commonBatchId = `B2B-BATCH-${orderGroup.orderId}`;
+  const finalTransactions: Transaction[] = [];
+  const newProds: Product[] = [];
+  const pendingIdsToDelete: string[] = [];
+  const newMappings = { ...productMappings };
 
-    for (const item of orderGroup.items) {
-      const settings = b2bItemSettings[item.id];
-      let finalLocalId = settings.localId;
+  for (const item of orderGroup.items) {
+    const settings = b2bItemSettings[item.id];
+    let finalLocalId = settings.localId;
 
-      if (!finalLocalId) {
-        finalLocalId = `P-B2B-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-        const newProduct: Product = {
-          id: finalLocalId,
-          name: settings.rename || settings.remoteName,
-          sku: `B2B-${Math.floor(Math.random() * 10000)}`,
-          category: settings.category,
-          price: (item.pricePerUnit || 0) * 1.5,
-          cost: item.pricePerUnit || 0,
-          quantity: 0,
-          minStock: 5,
-          unit: 'шт',
-          type: 'PRODUCT'
-        };
-        newProds.push(newProduct);
-        const mappingKey = `${orderGroup.supplierId}_${settings.remoteProductId}`;
-        newMappings[mappingKey] = finalLocalId;
-      } else {
-        const mappingKey = `${orderGroup.supplierId}_${settings.remoteProductId}`;
-        newMappings[mappingKey] = finalLocalId;
-      }
-
-      finalTransactions.push({
-        ...item,
-        id: `TR-B2B-IN-${Date.now()}-${item.id}`,
-        type: 'IN',
-        productId: finalLocalId,
-        batchId: commonBatchId,
-        paymentMethod: b2bPaymentMethod,
-        note: `B2B Приемка. Заказ №${orderGroup.orderId.slice(-4)}. Поставщик: ${suppliers.find(s=>s.id===orderGroup.supplierId)?.name}`
-      });
-
-      pendingIdsToDelete.push(item.id);
+    if (!finalLocalId) {
+      finalLocalId = `P-B2B-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+      // 🔥 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: quantity = item.quantity, а не 0!
+      const newProduct: Product = {
+        id: finalLocalId,
+        name: settings.rename || settings.remoteName,
+        sku: `B2B-${Math.floor(Math.random() * 10000)}`,
+        category: settings.category,
+        price: (item.pricePerUnit || 0) * 1.5,
+        cost: item.pricePerUnit || 0,
+        quantity: item.quantity, // ← вот здесь было 0, теперь правильно
+        minStock: 5,
+        unit: 'шт',
+        type: 'PRODUCT'
+      };
+      newProds.push(newProduct);
+      const mappingKey = `${orderGroup.supplierId}_${settings.remoteProductId}`;
+      newMappings[mappingKey] = finalLocalId;
+    } else {
+      const mappingKey = `${orderGroup.supplierId}_${settings.remoteProductId}`;
+      newMappings[mappingKey] = finalLocalId;
     }
 
-    await db.saveData('b2b_mappings', newMappings);
-    setProductMappings(newMappings);
+    finalTransactions.push({
+      ...item,
+      id: `TR-B2B-IN-${Date.now()}-${item.id}`,
+      type: 'IN',
+      productId: finalLocalId,
+      batchId: commonBatchId,
+      paymentMethod: b2bPaymentMethod,
+      note: `B2B Приемка. Заказ №${orderGroup.orderId.slice(-4)}. Поставщик: ${suppliers.find(s => s.id === orderGroup.supplierId)?.name || '---'}`
+    });
 
-    // Вызываем атомарное обновление в App.tsx
-    onConfirmB2BArrivalBulk(newProds, finalTransactions, pendingIdsToDelete);
+    pendingIdsToDelete.push(item.id);
+  }
 
-    setSelectedB2BOrderId(null);
-    alert('Товары успешно приняты на склад!');
-  };
+  await db.saveData('b2b_mappings', newMappings);
+  setProductMappings(newMappings);
+
+  // Передаём данные в App.tsx для атомарного обновления
+  onConfirmB2BArrivalBulk(newProds, finalTransactions, pendingIdsToDelete);
+
+  setSelectedB2BOrderId(null);
+  alert('Товары успешно приняты на склад!');
+};
 
   const totalSum = batch.reduce((acc, i) => acc + (i.quantity * i.cost), 0);
 
