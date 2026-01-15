@@ -233,18 +233,19 @@ const AllOperations: React.FC<AllOperationsProps> = ({
       });
 
       Object.values(stockGroups).forEach(group => {
+        const isPending = group.type === 'PENDING_IN';
         list.push({
           id: group.id,
           date: group.date,
           type: 'STOCK',
-          title: group.type === 'IN' ? 'Приход товара' : 'Расход товара',
+          title: isPending ? 'Ожидаемый приход' : (group.type === 'IN' ? 'Приход товара' : 'Расход товара'),
           targetName: group.supplierId ? getSupplierName(group.supplierId) : 'Складской учет',
           targetIcon: 'fa-truck',
-          subtitle: `${group.items.length} поз. • ${group.paymentMethod === 'CASH' ? 'Оплачено' : 'В долг'}`,
-          amount: group.totalAmount, 
-          isPositive: group.type === 'IN', 
-          icon: group.type === 'IN' ? 'fa-arrow-down' : 'fa-arrow-up',
-          color: group.type === 'IN' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600',
+          subtitle: `${group.items.length} поз. • ${isPending ? 'Заявка' : (group.paymentMethod === 'CASH' ? 'Оплачено' : 'В долг')}`,
+          amount: group.totalAmount,
+          isPositive: group.type === 'IN' || group.type === 'PENDING_IN',
+          icon: isPending ? 'fa-hourglass-half' : (group.type === 'IN' ? 'fa-arrow-down' : 'fa-arrow-up'),
+          color: isPending ? 'bg-indigo-50 text-indigo-500' : (group.type === 'IN' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'),
           responsible: getEmployeeName(group.employeeId), 
           raw: group
         });

@@ -12,6 +12,7 @@ interface WarehouseProps {
   setBatch: React.Dispatch<React.SetStateAction<Array<{productId: string, name: string, quantity: number, cost: number, unit: string}>>>;
   onTransaction: (t: Transaction) => void;
   onTransactionsBulk: (ts: Transaction[]) => void;
+  onConfirmB2BArrivalBulk?: (newProds: Product[], finalTransactions: Transaction[], pendingIdsToDelete: string[]) => void;
   onAddCashEntry?: (entry: Omit<CashEntry, 'id' | 'date' | 'employeeId'> & { id?: string }) => void;
   onAddProduct: (p: Product) => void;
   onDeleteTransaction: (id: string) => void;
@@ -20,7 +21,7 @@ interface WarehouseProps {
 
 const Warehouse: React.FC<WarehouseProps> = ({
   products, suppliers, transactions, categories, batch, setBatch,
-  onTransactionsBulk, onAddCashEntry, onAddProduct, onDeleteTransaction,
+  onTransactionsBulk, onConfirmB2BArrivalBulk, onAddCashEntry, onAddProduct, onDeleteTransaction,
   orders = []
 }) => {
   const [warehouseTab, setWarehouseTab] = useState<'MANUAL' | 'EXTERNAL'>('MANUAL');
@@ -224,10 +225,12 @@ const Warehouse: React.FC<WarehouseProps> = ({
 
   const handleConfirmB2BReceipt = async () => {
     const orderGroup = externalOrders.find(o => o.orderId === selectedB2BOrderId);
-    if (!orderGroup) return;
+    if (!orderGroup || !onConfirmB2BArrivalBulk) return;
 
     const commonBatchId = `B2B-BATCH-${orderGroup.orderId}`;
-    const newTransactions: Transaction[] = [];
+    const finalTransactions: Transaction[] = [];
+    const newProds: Product[] = [];
+    const pendingIdsToDelete: string[] = [];
     const newMappings = { ...productMappings };
 
     for (const item of orderGroup.items) {
@@ -248,7 +251,7 @@ const Warehouse: React.FC<WarehouseProps> = ({
           unit: 'шт',
           type: 'PRODUCT'
         };
-        onAddProduct(newProduct);
+        newProds.push(newProduct);
         const mappingKey = `${orderGroup.supplierId}_${settings.remoteProductId}`;
         newMappings[mappingKey] = finalLocalId;
       } else {
@@ -256,7 +259,7 @@ const Warehouse: React.FC<WarehouseProps> = ({
         newMappings[mappingKey] = finalLocalId;
       }
 
-      newTransactions.push({
+      finalTransactions.push({
         ...item,
         id: `TR-B2B-IN-${Date.now()}-${item.id}`,
         type: 'IN',
@@ -266,12 +269,14 @@ const Warehouse: React.FC<WarehouseProps> = ({
         note: `B2B Приемка. Заказ №${orderGroup.orderId.slice(-4)}. Поставщик: ${suppliers.find(s=>s.id===orderGroup.supplierId)?.name}`
       });
 
-      onDeleteTransaction(item.id);
+      pendingIdsToDelete.push(item.id);
     }
 
     await db.saveData('b2b_mappings', newMappings);
     setProductMappings(newMappings);
-    onTransactionsBulk(newTransactions);
+
+    // Вызываем атомарное обновление в App.tsx
+    onConfirmB2BArrivalBulk(newProds, finalTransactions, pendingIdsToDelete);
 
     setSelectedB2BOrderId(null);
     alert('Товары успешно приняты на склад!');
@@ -321,10 +326,18 @@ const Warehouse: React.FC<WarehouseProps> = ({
           ) : (
             <div className="grid grid-cols-2 gap-3 pb-20">
               {filteredProducts.map(p => (
-                <button key={p.id} onClick={() => openAddItem(p)} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-left active:scale-95 transition-all">
-                  <div className="text-[8px] font-black text-indigo-400 uppercase mb-1">{p.category}</div>
-                  <div className="font-bold text-slate-800 text-xs line-clamp-2 min-h-[32px]">{p.name}</div>
-                  <div className="flex justify-between items-end mt-3 pt-2 border-t border-slate-50"><div className="text-[9px] font-black text-slate-400 uppercase">Ост: {p.quantity}</div><div className="w-8 h-8 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg"><i className="fas fa-plus text-xs"></i></div></div>
+                <button key={p.id} onClick={() => openAddItem(p)} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-left active:scale-95 transition-all flex flex-col justify-between min-h-[140px] animate-fade-in group">
+                  <div>
+                    <div className="text-[10px] text-slate-400 uppercase font-black mb-1">{p.category}</div>
+                    <div className="font-bold text-slate-800 line-clamp-2 leading-tight text-sm group-hover:text-indigo-600">{p.name}</div>
+                  </div>
+                  <div className="flex justify-between items-end mt-2">
+                    <div>
+                      <div className="text-[10px] text-slate-400 font-medium">Ост: {p.quantity} {p.unit}</div>
+                      <div className="text-[10px] text-slate-400 font-medium opacity-50">#{p.sku.slice(-4)}</div>
+                    </div>
+                    <div className="w-8 h-8 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg"><i className="fas fa-plus text-xs"></i></div>
+                  </div>
                 </button>
               ))}
             </div>
@@ -455,10 +468,13 @@ const Warehouse: React.FC<WarehouseProps> = ({
           <div className="bg-white w-full max-sm rounded-[40px] shadow-2xl p-8 space-y-6">
             <div className="text-center"><p className="text-[10px] font-black text-indigo-400 uppercase mb-1">{activeItem.category}</p><h3 className="text-xl font-black text-slate-800">{activeItem.name}</h3></div>
             <div className="space-y-4">
-              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Количество ({activeItem.unit})</label><input type="number" step="any" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-center font-black text-lg" value={inputQty} onChange={e => setInputQty(parseFloat(e.target.value) || 0)} /></div>
-              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Цена закупа</label><input type="number" step="0.01" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-center font-black text-lg text-indigo-600" value={inputCost} onChange={e => setInputCost(parseFloat(e.target.value) || 0)} /></div>
+              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Количество ({activeItem.unit})</label><input type="number" step="any" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-center font-black text-xl text-slate-800" value={inputQty === 0 ? '' : inputQty} onChange={e => setInputQty(parseFloat(e.target.value) || 0)} /></div>
+              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Цена закупа</label><input type="number" step="0.01" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-center font-black text-xl text-indigo-600" value={inputCost === 0 ? '' : inputCost} onChange={e => setInputCost(parseFloat(e.target.value) || 0)} /></div>
             </div>
-            <div className="flex gap-3"><button onClick={() => setActiveItem(null)} className="flex-1 py-4 font-bold text-slate-400">Отмена</button><button onClick={confirmAddToDoc} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg">ДОБАВИТЬ</button></div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setActiveItem(null)} className="flex-1 py-4 font-bold text-slate-400">Отмена</button>
+              <button onClick={confirmAddToDoc} className="flex-1 bg-indigo-600 text-white py-4 rounded-[24px] font-black shadow-lg">ДОБАВИТЬ</button>
+            </div>
           </div>
         </div>
       )}

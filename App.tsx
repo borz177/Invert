@@ -308,7 +308,52 @@ const App: React.FC = () => {
         setProducts(prev => prev.map(p => productUpdates[p.id] ? { ...p, quantity: p.quantity + productUpdates[p.id].q, cost: productUpdates[p.id].c || p.cost } : p));
         setSuppliers(prev => prev.map(s => supplierUpdates[s.id] ? { ...s, debt: (Number(s.debt) || 0) + supplierUpdates[s.id] } : s));
         if (newCashEntries.length > 0) setCashEntries(prev => [...newCashEntries, ...prev]);
-      }} onAddProduct={(p) => setProducts(prev => { const up = [p, ...prev]; db.saveData('products', up); return up; })} onDeleteTransaction={(id) => setTransactions(prev => prev.filter(t => t.id !== id))} orders={orders} />;
+      }}
+      onConfirmB2BArrivalBulk={(newProds, finalTransactions, pendingIdsToDelete) => {
+        // Атомарное обновление для B2B
+        if (newProds.length > 0) setProducts(prev => [...newProds, ...prev]);
+
+        const productUpdates: any = {};
+        const supplierUpdates: any = {};
+        const batchCashMap: Record<string, { amount: number, supplierId?: string, employeeId: string, date: string, itemsCount: number }> = {};
+
+        finalTransactions.forEach(t => {
+          productUpdates[t.productId] = { q: (productUpdates[t.productId]?.q || 0) + t.quantity, c: t.pricePerUnit };
+          const sum = t.quantity * (t.pricePerUnit || 0);
+
+          if (t.paymentMethod === 'DEBT' && t.supplierId) {
+            supplierUpdates[t.supplierId] = (supplierUpdates[t.supplierId] || 0) + sum;
+          } else if (t.paymentMethod === 'CASH') {
+            const bId = t.batchId || 'b2b-batch';
+            if (!batchCashMap[bId]) {
+              batchCashMap[bId] = { amount: 0, supplierId: t.supplierId, employeeId: t.employeeId, date: t.date, itemsCount: 0 };
+            }
+            batchCashMap[bId].amount += sum;
+            batchCashMap[bId].itemsCount += 1;
+          }
+        });
+
+        const newCashEntries: CashEntry[] = Object.values(batchCashMap).map((b, idx) => ({
+          id: `CS-B2B-BATCH-${Date.now()}-${idx}`,
+          amount: b.amount,
+          type: 'EXPENSE',
+          category: 'Закупка товара',
+          description: `B2B Оплата накладной. Поставщик: ${suppliers.find(s=>s.id===b.supplierId)?.name || '---'}`,
+          date: b.date,
+          employeeId: b.employeeId,
+          supplierId: b.supplierId
+        }));
+
+        setTransactions(prev => {
+          const filtered = prev.filter(t => !pendingIdsToDelete.includes(t.id));
+          return [...finalTransactions, ...filtered];
+        });
+
+        setProducts(prev => prev.map(p => productUpdates[p.id] ? { ...p, quantity: p.quantity + productUpdates[p.id].q, cost: productUpdates[p.id].c || p.cost } : p));
+        setSuppliers(prev => prev.map(s => supplierUpdates[s.id] ? { ...s, debt: (Number(s.debt) || 0) + supplierUpdates[s.id] } : s));
+        if (newCashEntries.length > 0) setCashEntries(prev => [...newCashEntries, ...prev]);
+      }}
+      onAddProduct={(p) => setProducts(prev => { const up = [p, ...prev]; db.saveData('products', up); return up; })} onDeleteTransaction={(id) => setTransactions(prev => prev.filter(t => t.id !== id))} orders={orders} />;
       case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} currentUserId={currentUser?.id} settings={settings} onSale={s => {
         setSales(prev => [s, ...prev]);
         setProducts(prev => prev.map(p => {
