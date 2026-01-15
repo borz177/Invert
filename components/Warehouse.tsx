@@ -8,7 +8,6 @@ interface WarehouseProps {
   suppliers: Supplier[];
   transactions: Transaction[];
   categories: string[];
-  // Fix: batch item type must match and setBatch must be a Dispatch function to be callable
   batch: Array<{productId: string, name: string, quantity: number, cost: number, unit: string}>;
   setBatch: React.Dispatch<React.SetStateAction<Array<{productId: string, name: string, quantity: number, cost: number, unit: string}>>>;
   onTransaction: (t: Transaction) => void;
@@ -87,7 +86,6 @@ const Warehouse: React.FC<WarehouseProps> = ({
       cost: inputCost,
       unit: activeItem.unit
     };
-    // Fix: setBatch is now correctly typed as a Dispatch function
     setBatch(prev => Array.isArray(prev) ? [...prev, newItem] : [newItem]);
     setActiveItem(null);
     setIsDocOpen(true);
@@ -100,6 +98,8 @@ const Warehouse: React.FC<WarehouseProps> = ({
       return;
     }
 
+    const commonBatchId = `BATCH-${Date.now()}`;
+
     const newTransactions: Transaction[] = batch.map(item => ({
       id: `TR-IN-${Date.now()}-${item.productId}`,
       productId: item.productId,
@@ -109,12 +109,12 @@ const Warehouse: React.FC<WarehouseProps> = ({
       date: receiptDate + 'T' + new Date().toISOString().split('T')[1],
       pricePerUnit: item.cost,
       paymentMethod: paymentMethod,
+      batchId: commonBatchId,
       note: `Приход на склад. Поставщик: ${suppliers.find(s => s.id === selectedSupplier)?.name || '---'}`,
       employeeId: 'admin'
     }));
 
     onTransactionsBulk(newTransactions);
-    // Fix: setBatch is correctly typed and callable
     setBatch([]);
     setIsDocOpen(false);
     alert('Приход успешно проведен!');
@@ -186,7 +186,6 @@ const Warehouse: React.FC<WarehouseProps> = ({
     let remotePaymentMethod: 'CASH' | 'DEBT' = 'DEBT';
 
     try {
-      // КРИТИЧЕСКИЙ ШАГ: Запрашиваем данные напрямую из магазина поставщика
       const remoteOrders = await db.getDataOfShop(orderGroup.supplierId, 'orders');
       if (Array.isArray(remoteOrders)) {
         const matchingOrder = remoteOrders.find((o: any) => o.id === orderId);
@@ -227,6 +226,7 @@ const Warehouse: React.FC<WarehouseProps> = ({
     const orderGroup = externalOrders.find(o => o.orderId === selectedB2BOrderId);
     if (!orderGroup) return;
 
+    const commonBatchId = `B2B-BATCH-${Date.now()}`;
     const newTransactions: Transaction[] = [];
     const newMappings = { ...productMappings };
 
@@ -261,6 +261,7 @@ const Warehouse: React.FC<WarehouseProps> = ({
         id: `TR-B2B-IN-${Date.now()}-${item.id}`,
         type: 'IN',
         productId: finalLocalId,
+        batchId: commonBatchId,
         paymentMethod: b2bPaymentMethod,
         note: `B2B Приемка. Заказ №${orderGroup.orderId.slice(-4)}. Поставщик: ${suppliers.find(s=>s.id===orderGroup.supplierId)?.name}`
       });
@@ -320,7 +321,7 @@ const Warehouse: React.FC<WarehouseProps> = ({
           ) : (
             <div className="grid grid-cols-2 gap-3 pb-20">
               {filteredProducts.map(p => (
-                <button key={p.id} onClick={() => openAddItem(p)} className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm text-left active:scale-95 transition-all">
+                <button key={p.id} onClick={() => openAddItem(p)} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-left active:scale-95 transition-all">
                   <div className="text-[8px] font-black text-indigo-400 uppercase mb-1">{p.category}</div>
                   <div className="font-bold text-slate-800 text-xs line-clamp-2 min-h-[32px]">{p.name}</div>
                   <div className="flex justify-between items-end mt-3 pt-2 border-t border-slate-50"><div className="text-[9px] font-black text-slate-400 uppercase">Ост: {p.quantity}</div><div className="w-8 h-8 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg"><i className="fas fa-plus text-xs"></i></div></div>
@@ -356,7 +357,6 @@ const Warehouse: React.FC<WarehouseProps> = ({
         </div>
       )}
 
-      {/* Модальное окно приемки B2B */}
       {selectedB2BOrderId && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-2xl rounded-t-[40px] sm:rounded-[40px] shadow-2xl p-6 flex flex-col max-h-[95vh] animate-slide-up overflow-hidden">
@@ -369,7 +369,6 @@ const Warehouse: React.FC<WarehouseProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-6 pr-1">
-              {/* Статус оплаты */}
               <div className="bg-indigo-50 p-5 rounded-3xl border border-indigo-100">
                 <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center mb-3">Способ оплаты (актуальные данные поставщика)</p>
                 {isSyncing ? (
@@ -378,7 +377,7 @@ const Warehouse: React.FC<WarehouseProps> = ({
                   <>
                     <div className="grid grid-cols-2 gap-2">
                       <button onClick={() => setB2BPaymentMethod('CASH')} className={`py-3 rounded-2xl font-black text-[10px] uppercase transition-all border-2 ${b2bPaymentMethod === 'CASH' ? 'bg-emerald-50 border-emerald-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>Оплачено</button>
-                      <button onClick={() => setB2BPaymentMethod('DEBT')} className={`py-3 rounded-2xl font-black text-[10px] uppercase transition-all border-2 ${b2bPaymentMethod === 'DEBT' ? 'bg-red-500 border-red-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>В долг</button>
+                      <button onClick={() => setB2BPaymentMethod('DEBT')} className={`py-3 rounded-2xl font-black text-[10px] uppercase transition-all border-2 ${b2bPaymentMethod === 'DEBT' ? 'bg-red-50 border-red-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>В долг</button>
                     </div>
                     <p className="text-[8px] text-center text-indigo-400 font-bold uppercase mt-2 opacity-70">
                        * Данные синхронизированы из базы поставщика
@@ -451,7 +450,6 @@ const Warehouse: React.FC<WarehouseProps> = ({
         </div>
       )}
 
-      {/* Модалки ручной приемки */}
       {activeItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
           <div className="bg-white w-full max-sm rounded-[40px] shadow-2xl p-8 space-y-6">
@@ -474,7 +472,6 @@ const Warehouse: React.FC<WarehouseProps> = ({
                 <button onClick={() => setPaymentMethod('CASH')} className={`p-4 rounded-2xl border-2 transition-all font-black text-[10px] uppercase ${paymentMethod === 'CASH' ? 'bg-emerald-50 border-emerald-500 text-emerald-600' : 'bg-white border-slate-100 text-slate-400'}`}>Оплачено</button>
                 <button onClick={() => setPaymentMethod('DEBT')} className={`p-4 rounded-2xl border-2 transition-all font-black text-[10px] uppercase ${paymentMethod === 'DEBT' ? 'bg-red-50 border-red-500 text-red-600' : 'bg-white border-slate-100 text-slate-400'}`}>В долг</button>
               </div>
-              {/* Fix: setBatch is correctly typed and callable */}
               {batch.map(item => (<div key={item.productId} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="min-w-0 flex-1 pr-4"><p className="font-bold text-slate-800 text-sm truncate">{item.name}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit} x {item.cost} ₽</p></div><button onClick={() => setBatch(batch.filter(b => b.productId !== item.productId))} className="text-red-300 ml-3"><i className="fas fa-trash-alt"></i></button></div>))}
             </div>
             <div className="pt-4 border-t border-slate-100 space-y-4"><div className="flex justify-between items-end px-2"><span className="text-[10px] font-black text-slate-400 uppercase">Итого</span><span className="text-3xl font-black text-slate-800">{totalSum.toLocaleString()} ₽</span></div><button onClick={handlePostDocument} className="w-full bg-indigo-600 text-white p-5 rounded-[24px] font-black uppercase shadow-xl">ПРОВЕСТИ ПРИХОД</button></div>

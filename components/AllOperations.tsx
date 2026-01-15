@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { Sale, Transaction, CashEntry, Product, Employee, Customer, AppSettings } from '../types';
 
@@ -210,17 +211,42 @@ const AllOperations: React.FC<AllOperationsProps> = ({
         }));
     }
     if (filter === 'ALL' || filter === 'STOCK') {
+      // Группировка складских транзакций по batchId
+      const stockGroups: Record<string, any> = {};
+      
       transactions.forEach(t => {
-        const p = products.find(prod => prod.id === t.productId);
+        const groupKey = t.batchId || t.id; // Если нет batchId, считаем за одиночный документ
+        if (!stockGroups[groupKey]) {
+          stockGroups[groupKey] = {
+            id: groupKey,
+            date: t.date,
+            type: t.type,
+            supplierId: t.supplierId,
+            employeeId: t.employeeId,
+            paymentMethod: t.paymentMethod,
+            items: [],
+            totalAmount: 0
+          };
+        }
+        stockGroups[groupKey].items.push(t);
+        stockGroups[groupKey].totalAmount += (t.quantity * (t.pricePerUnit || 0));
+      });
+
+      Object.values(stockGroups).forEach(group => {
         list.push({
-          id: t.id, date: t.date, type: 'STOCK',
-          title: t.type === 'IN' ? 'Приход товара' : 'Расход товара',
-          targetName: t.supplierId ? getSupplierName(t.supplierId) : 'Складской учет',
+          id: group.id,
+          date: group.date,
+          type: 'STOCK',
+          title: group.type === 'IN' ? 'Приход товара' : 'Расход товара',
+          targetName: group.supplierId ? getSupplierName(group.supplierId) : 'Складской учет',
           targetIcon: 'fa-truck',
-          subtitle: `${p?.name || '---'} • ${t.quantity} ${p?.unit || 'шт.'}`,
-          amount: 0, isPositive: t.type === 'IN', icon: t.type === 'IN' ? 'fa-arrow-down' : 'fa-arrow-up',
-          color: t.type === 'IN' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600',
-          isDeleted: t.isDeleted, responsible: getEmployeeName(t.employeeId), raw: t
+          subtitle: `${group.items.length} поз. • ${group.paymentMethod === 'CASH' ? 'Оплачено' : 'В долг'}`,
+          amount: group.totalAmount, 
+          isPositive: group.type === 'IN', 
+          icon: group.type === 'IN' ? 'fa-arrow-down' : 'fa-arrow-up',
+          color: group.type === 'IN' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600',
+          responsible: getEmployeeName(group.employeeId), 
+          raw: group
         });
       });
     }
@@ -250,7 +276,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
   const handleSaleUpdateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingSale) {
-      onUpdateSale(editingSale); // Передаём только обновлённую версию
+      onUpdateSale(editingSale);
       setEditingSale(null);
       setActiveMenuId(null);
     }
@@ -314,10 +340,6 @@ const AllOperations: React.FC<AllOperationsProps> = ({
                     {op.type === 'SALE' && canDelete && (
                       <button onClick={(e) => { e.stopPropagation(); setEditingSale(op.raw); setActiveMenuId(null); }} className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-50"><i className="fas fa-pen text-indigo-400"></i> Редактировать</button>
                     )}
-                    {/* УДАЛЕНИЕ ВРЕМЕННО ОТКЛЮЧЕНО */}
-                    {/* {canDelete && (
-                      <button onClick={(e) => { e.stopPropagation(); if(confirm('Удалить операцию?')) { if(op.type==='SALE') onDeleteSale(op.id); else if(op.type==='STOCK') onDeleteTransaction(op.id); else onDeleteCashEntry(op.id); } }} className="w-full px-4 py-3 text-left text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 border-t border-slate-50"><i className="fas fa-trash"></i> Удалить</button>
-                    )} */}
                   </div>
                 )}
               </div>
@@ -329,7 +351,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
 
       {printModalSale && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[600] flex items-center justify-center p-4" onClick={() => setPrintModalSale(null)}>
-          <div className="bg-white p-8 rounded-[40px] shadow-2xl w-full max-w-sm space-y-6 animate-slide-up" onClick={e => e.stopPropagation()}>
+          <div className="bg-white p-8 rounded-[40px] shadow-2xl w-full max-sm space-y-6 animate-slide-up" onClick={e => e.stopPropagation()}>
             <div className="text-center">
               <h3 className="text-xl font-black text-slate-800">Выберите тип документа</h3>
               <p className="text-xs text-slate-400 mt-1 font-bold">Продажа №{printModalSale.id.slice(-6)}</p>
@@ -361,7 +383,7 @@ const AllOperations: React.FC<AllOperationsProps> = ({
 
       {editingSale && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[500] flex items-center justify-center p-4" onClick={() => setEditingSale(null)}>
-          <form onSubmit={handleSaleUpdateSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-w-md space-y-5 animate-fade-in max-h-[85vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
+          <form onSubmit={handleSaleUpdateSubmit} className="bg-white p-7 rounded-[40px] shadow-2xl w-full max-md space-y-5 animate-fade-in max-h-[85vh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
             <h3 className="text-xl font-black text-slate-800 text-center">Редактировать продажу</h3>
             <div className="space-y-4">
               {editingSale.items.map((it, idx) => {
@@ -404,9 +426,9 @@ const AllOperations: React.FC<AllOperationsProps> = ({
               <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Основная информация</p>
                 <div className="space-y-2">
-                  <div className="flex justify-between text-xs"><span className="text-slate-500 font-bold">Тип:</span><span className="font-black text-slate-700">{selectedDetail.category || (selectedDetail.items ? 'Продажа' : 'Склад')}</span></div>
+                  <div className="flex justify-between text-xs"><span className="text-slate-500 font-bold">Тип:</span><span className="font-black text-slate-700">{selectedDetail.category || (selectedDetail.items ? 'Документ' : 'Склад')}</span></div>
                   {selectedDetail.customerId && <div className="flex justify-between text-xs"><span className="text-slate-500 font-bold">Клиент:</span><span className="font-black text-indigo-600">{getCustomerName(selectedDetail.customerId)}</span></div>}
-                  {selectedDetail.supplierId && <div className="flex justify-between text-xs"><span className="text-slate-500 font-bold">Поставщик:</span><span className="font-black text-orange-600">{getSupplierName(selectedDetail.shopName)}</span></div>}
+                  {selectedDetail.supplierId && <div className="flex justify-between text-xs"><span className="text-slate-500 font-bold">Поставщик:</span><span className="font-black text-orange-600">{getSupplierName(selectedDetail.supplierId)}</span></div>}
                   <div className="flex justify-between text-xs"><span className="text-slate-500 font-bold">Ответственный:</span><span className="font-black text-slate-700">{getEmployeeName(selectedDetail.employeeId)}</span></div>
                 </div>
               </div>
@@ -414,13 +436,13 @@ const AllOperations: React.FC<AllOperationsProps> = ({
               {selectedDetail.items && (
                 <div className="space-y-2">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Товары</p>
-                  <div className="max-h-40 overflow-y-auto space-y-2 pr-1 no-scrollbar">
+                  <div className="max-h-60 overflow-y-auto space-y-2 pr-1 no-scrollbar">
                     {selectedDetail.items.map((it: any, i: number) => {
                       const p = products.find(prod => prod.id === it.productId);
                       return (
                         <div key={i} className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-2xl text-xs">
                           <span className="font-bold text-slate-700 truncate pr-4">{p?.name || '---'}</span>
-                          <span className="font-black shrink-0">{it.quantity} x {it.price} ₽</span>
+                          <span className="font-black shrink-0">{it.quantity} x {(it.price || it.pricePerUnit)} ₽</span>
                         </div>
                       );
                     })}
@@ -438,6 +460,12 @@ const AllOperations: React.FC<AllOperationsProps> = ({
                 <div className="bg-indigo-600 p-5 rounded-3xl text-white flex justify-between items-center shadow-lg">
                   <span className="text-xs font-black uppercase opacity-60">Итого:</span>
                   <span className="text-2xl font-black">{selectedDetail.total.toLocaleString()} ₽</span>
+                </div>
+              )}
+              {selectedDetail.totalAmount !== undefined && (
+                <div className="bg-indigo-600 p-5 rounded-3xl text-white flex justify-between items-center shadow-lg">
+                  <span className="text-xs font-black uppercase opacity-60">Сумма по накладной:</span>
+                  <span className="text-2xl font-black">{selectedDetail.totalAmount.toLocaleString()} ₽</span>
                 </div>
               )}
             </div>

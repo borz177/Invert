@@ -46,7 +46,6 @@ const App: React.FC = () => {
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
-  // Fix: added explicit types for cart and batch states to match component props and resolve assignment errors
   const [posCart, setPosCart] = useState<Array<{ id: string; name: string; price: number; cost: number; quantity: number; unit: string }>>([]);
   const [warehouseBatch, setWarehouseBatch] = useState<Array<{productId: string, name: string, quantity: number, cost: number; unit: string}>>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -192,7 +191,6 @@ const App: React.FC = () => {
         quantity: it.quantity,
         date: order.date,
         pricePerUnit: it.price,
-        // Ожидаемый платеж пока не определен, он придет от продавца при подтверждении
         paymentMethod: undefined,
         note: `B2B Заказ №${order.id.slice(-4)} у ${shopName}. Название: ${shopP?.name || 'Товар'}`,
         employeeId: currentUser?.id || 'admin',
@@ -271,31 +269,43 @@ const App: React.FC = () => {
       />;
       case 'WAREHOUSE': return <Warehouse products={products} suppliers={suppliers} transactions={transactions} categories={categories} batch={warehouseBatch} setBatch={setWarehouseBatch} onTransaction={t => setTransactions(prev => [t, ...prev])} onTransactionsBulk={ts => {
         setTransactions(prev => [...ts, ...prev]);
-        const pU: any = {};
-        const sU: any = {};
-        const newCashEntries: CashEntry[] = [];
+
+        const productUpdates: any = {};
+        const supplierUpdates: any = {};
+
+        // Группировка наличных оплат по партиям (один batchId = одна запись в кассе)
+        const batchCashMap: Record<string, { amount: number, supplierId?: string, employeeId: string, date: string, itemsCount: number }> = {};
 
         ts.forEach(t => {
-          pU[t.productId] = { q: (pU[t.productId]?.q || 0) + t.quantity, c: t.pricePerUnit };
+          productUpdates[t.productId] = { q: (productUpdates[t.productId]?.q || 0) + t.quantity, c: t.pricePerUnit };
           const sum = t.quantity * (t.pricePerUnit || 0);
+
           if (t.paymentMethod === 'DEBT' && t.supplierId) {
-            sU[t.supplierId] = (sU[t.supplierId] || 0) + sum;
+            supplierUpdates[t.supplierId] = (supplierUpdates[t.supplierId] || 0) + sum;
           } else if (t.paymentMethod === 'CASH') {
-            newCashEntries.push({
-              id: `CS-IN-${Date.now()}-${t.id}`,
-              amount: sum,
-              type: 'EXPENSE',
-              category: 'Закупка товара',
-              description: `Оплата товара: ${products.find(p=>p.id===t.productId)?.name || '---'}`,
-              date: t.date,
-              employeeId: t.employeeId,
-              supplierId: t.supplierId
-            });
+            const bId = t.batchId || 'default-batch';
+            if (!batchCashMap[bId]) {
+              batchCashMap[bId] = { amount: 0, supplierId: t.supplierId, employeeId: t.employeeId, date: t.date, itemsCount: 0 };
+            }
+            batchCashMap[bId].amount += sum;
+            batchCashMap[bId].itemsCount += 1;
           }
         });
 
-        setProducts(prev => prev.map(p => pU[p.id] ? { ...p, quantity: p.quantity + pU[p.id].q, cost: pU[p.id].c || p.cost } : p));
-        setSuppliers(prev => prev.map(s => sU[s.id] ? { ...s, debt: (Number(s.debt) || 0) + sU[s.id] } : s));
+        // Создаем записи в кассе (по одной на каждую партию)
+        const newCashEntries: CashEntry[] = Object.values(batchCashMap).map((b, idx) => ({
+          id: `CS-IN-BATCH-${Date.now()}-${idx}`,
+          amount: b.amount,
+          type: 'EXPENSE',
+          category: 'Закупка товара',
+          description: `Оплата накладной (${b.itemsCount} поз.). Поставщик: ${suppliers.find(s=>s.id===b.supplierId)?.name || '---'}`,
+          date: b.date,
+          employeeId: b.employeeId,
+          supplierId: b.supplierId
+        }));
+
+        setProducts(prev => prev.map(p => productUpdates[p.id] ? { ...p, quantity: p.quantity + productUpdates[p.id].q, cost: productUpdates[p.id].c || p.cost } : p));
+        setSuppliers(prev => prev.map(s => supplierUpdates[s.id] ? { ...s, debt: (Number(s.debt) || 0) + supplierUpdates[s.id] } : s));
         if (newCashEntries.length > 0) setCashEntries(prev => [...newCashEntries, ...prev]);
       }} onAddProduct={(p) => setProducts(prev => { const up = [p, ...prev]; db.saveData('products', up); return up; })} onDeleteTransaction={(id) => setTransactions(prev => prev.filter(t => t.id !== id))} orders={orders} />;
       case 'SALES': return <POS products={products} customers={customers} cart={posCart} setCart={setPosCart} currentUserId={currentUser?.id} settings={settings} onSale={s => {
@@ -321,7 +331,6 @@ const App: React.FC = () => {
           setCashEntries(prev => [cashEntry, ...prev]);
         }
       }} />;
-      // Fix: Added missing 'products' prop to 'Clients' component
       case 'CLIENTS': return <Clients products={products} customers={customers} sales={sales} cashEntries={cashEntries} onAdd={c => setCustomers(prev => [c, ...prev])} onUpdate={c => setCustomers(prev => prev.map(x => x.id === c.id ? c : x))} onDelete={id => setCustomers(prev => prev.filter(x => x.id !== id))}/>;
       case 'SUPPLIERS': return <Suppliers suppliers={suppliers} transactions={transactions} cashEntries={cashEntries} products={products} onAdd={s => setSuppliers(prev => [s, ...prev])} onUpdate={s => setSuppliers(prev => prev.map(x => x.id === s.id ? s : x))} onDelete={id => setSuppliers(prev => prev.filter(x => x.id !== id))}/>;
       case 'EMPLOYEES': return <Employees employees={employees} sales={sales} onAdd={e => setEmployees(prev => [e, ...prev])} onUpdate={e => setEmployees(prev => prev.map(x => x.id === e.id ? e : x))} onDelete={id => setEmployees(prev => prev.filter(x => x.id !== id))}/>;
