@@ -51,6 +51,7 @@ const upload = multer({
 app.use(express.json({ limit: '50mb' }));
 // Раздача загруженных изображений
 app.use('/uploads', express.static(UPLOADS_DIR));
+console.log('Путь к uploads:', UPLOADS_DIR);
 app.use((req, res, next) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   next();
