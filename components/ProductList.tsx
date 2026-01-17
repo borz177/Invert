@@ -21,7 +21,7 @@ interface ProductListProps {
 
 const ProductList: React.FC<ProductListProps> = ({
   products, categories, canEdit, canCreate, canDelete, showCost,
-  onAdd, onAddBulk, onUpdate, onDelete, onAddCategory, onRenameCategory, onDeleteCategory
+  onAdd, onAddBulk, onUpdate, onDelete, onAddCategory, onRenameCategory, onDeleteCategory, lowStockThreshold
 }) => {
   const [showForm, setShowForm] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
