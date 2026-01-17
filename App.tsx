@@ -281,7 +281,7 @@ const App: React.FC = () => {
     }
     switch (view) {
       case 'DASHBOARD': return <Dashboard products={products} sales={sales} cashEntries={cashEntries} customers={customers} suppliers={suppliers} onNavigate={setView} orderCount={orders.filter(o => o.status === 'NEW').length}/>;
-      case 'PRODUCTS': return <ProductList products={products} categories={categories} canEdit={true} canCreate={true} canDelete={true} showCost={true}
+      case 'PRODUCTS': return <ProductList products={products} categories={categories} canEdit={true} canCreate={true} canDelete={true} showCost={true} lowStockThreshold={settings.lowStockThreshold}
         onAdd={(p) => setProducts(prev => { const up = [p, ...prev]; db.saveData('products', up); return up; })}
         onAddBulk={(ps) => setProducts(prev => { const up = [...ps, ...prev]; db.saveData('products', up); return up; })}
         onUpdate={(p) => setProducts(prev => { const up = prev.map(x => x.id === p.id ? p : x); db.saveData('products', up); return up; })}

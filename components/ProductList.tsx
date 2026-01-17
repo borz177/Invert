@@ -16,6 +16,7 @@ interface ProductListProps {
   onAddCategory: (category: string) => void;
   onRenameCategory: (oldName: string, newName: string) => void;
   onDeleteCategory: (name: string) => void;
+  lowStockThreshold: number;
 }
 
 const ProductList: React.FC<ProductListProps> = ({
@@ -38,7 +39,7 @@ const ProductList: React.FC<ProductListProps> = ({
 
   const [formData, setFormData] = useState<Partial<Product>>({
     category: categories[0] || 'Другое',
-    minStock: 5,
+    minStock: lowStockThreshold,
     quantity: 0,
     cost: 0,
     price: 0,
@@ -160,7 +161,7 @@ const ProductList: React.FC<ProductListProps> = ({
           cost: parseFloat(parts[2]) || 0,
           quantity: parseFloat(parts[3]) || 0,
           category: selectedCategory || categories[0] || 'Другое',
-          minStock: 5,
+          minStock: lowStockThreshold,
           unit: 'шт',
           type: 'PRODUCT'
         });
@@ -219,7 +220,7 @@ const ProductList: React.FC<ProductListProps> = ({
           {canCreate && (
             <>
               <button onClick={(e) => { e.stopPropagation(); setShowBulk(true); }} className="bg-slate-100 text-slate-600 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider">Массово</button>
-              <button onClick={(e) => { e.stopPropagation(); setFormData({ category: selectedCategory || categories[0] || 'Другое', minStock: 5, quantity: 0, cost: 0, price: 0, unit: 'шт', type: 'PRODUCT' }); setShowForm(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold shadow-sm active:scale-95 transition-transform">+ Добавить</button>
+              <button onClick={(e) => { e.stopPropagation(); setFormData({ category: selectedCategory || categories[0] || 'Другое', minStock: lowStockThreshold, quantity: 0, cost: 0, price: 0, unit: 'шт', type: 'PRODUCT' }); setShowForm(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold shadow-sm active:scale-95 transition-transform">+ Добавить</button>
             </>
           )}
         </div>
@@ -422,26 +423,7 @@ const ProductList: React.FC<ProductListProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                {formData.type !== 'SERVICE' && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Закуп
-                        (₽)</label>
-                      <input type="number" step="0.01" inputMode="decimal"
-                             className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
-                             value={formData.cost === 0 ? '' : formData.cost}
-                             onChange={e => setFormData(prev => ({...prev, cost: parseFloat(e.target.value) || 0}))}/>
-                    </div>
-                )}
-                <div className={`${formData.type === 'SERVICE' ? 'col-span-2' : ''} space-y-1`}>
-                  <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Цена продажи
-                    (₽)</label>
-                  <input type="number" step="0.01" inputMode="decimal" required
-                         className="w-full p-4 bg-indigo-50 border border-indigo-100 rounded-2xl outline-none font-black text-indigo-600"
-                         value={formData.price === 0 ? '' : formData.price}
-                         onChange={e => setFormData(prev => ({...prev, price: parseFloat(e.target.value) || 0}))}/>
-                </div>
-              </div>
+
 
               {formData.type !== 'SERVICE' && (
                   <div className="grid grid-cols-2 gap-4">
@@ -467,6 +449,29 @@ const ProductList: React.FC<ProductListProps> = ({
                     </div>
                   </div>
               )}
+
+              <div className="grid grid-cols-2 gap-4">
+                {formData.type !== 'SERVICE' && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Закуп
+                        (₽)</label>
+                      <input type="number" step="0.01" inputMode="decimal"
+                             className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold"
+                             value={formData.cost === 0 ? '' : formData.cost}
+                             onChange={e => setFormData(prev => ({...prev, cost: parseFloat(e.target.value) || 0}))}/>
+                    </div>
+                )}
+                <div className={`${formData.type === 'SERVICE' ? 'col-span-2' : ''} space-y-1`}>
+                  <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Цена продажи
+                    (₽)</label>
+                  <input type="number" step="0.01" inputMode="decimal" required
+                         className="w-full p-4 bg-indigo-50 border border-indigo-100 rounded-2xl outline-none font-black text-indigo-600"
+                         value={formData.price === 0 ? '' : formData.price}
+                         onChange={e => setFormData(prev => ({...prev, price: parseFloat(e.target.value) || 0}))}/>
+                </div>
+              </div>
+
+
             </div>
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={closeForm} className="flex-1 py-4 font-bold text-slate-400">Отмена</button>
